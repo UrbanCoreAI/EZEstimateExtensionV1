@@ -1,0 +1,145 @@
+/* Duke Estimating - Options Page Styles */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f8f9fa;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.logo {
+  width: 48px; height: 48px;
+  background: #1a1a2e;
+  color: #e8b84b;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 26px;
+  flex-shrink: 0;
+}
+h1 { font-size: 22px; font-weight: 700; color: #1a1a2e; }
+p { font-size: 13px; color: #718096; margin-top: 2px; }
+
+.card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+}
+.badge {
+  font-size: 10px; font-weight: 700; background: #e8b84b; color: #1a1a2e;
+  padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.help {
+  font-size: 12px;
+  color: #718096;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.help a { color: #2b6cb0; text-decoration: none; }
+.help a:hover { text-decoration: underline; }
+
+.field {
+  margin-bottom: 14px;
+}
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5568;
+  margin-bottom: 5px;
+}
+.field input {
+  width: 100%;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 13px;
+  transition: border-color 0.15s;
+  color: #1a1a2e;
+}
+.field input:focus { outline: none; border-color: #63b3ed; box-shadow: 0 0 0 3px rgba(99,179,237,0.2); }
+.field-hint { display: block; font-size: 11px; color: #a0aec0; margin-top: 4px; }
+
+.info-box {
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-size: 12px;
+  color: #4a5568;
+  line-height: 1.6;
+}
+.info-box ol { padding-left: 16px; margin-top: 6px; }
+.info-box li { margin-bottom: 4px; }
+.info-box code {
+  background: #edf2f7;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  word-break: break-all;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.status {
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.status.success { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+.status.error   { background: #fff5f5; color: #9b2c2c; border: 1px solid #feb2b2; }
+.status.info    { background: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; }
+.hidden { display: none !important; }
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-primary {
+  background: #e8b84b; color: #1a1a2e;
+  border: none; border-radius: 6px; padding: 10px 24px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: #d4a235; }
+
+.btn-secondary {
+  background: white; color: #2b6cb0;
+  border: 1px solid #bee3f8; border-radius: 6px; padding: 10px 20px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-secondary:hover { background: #ebf8ff; }
+
+.btn-ghost {
+  background: none; color: #718096;
+  border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px;
+  font-size: 13px; cursor: pointer;
+}
+.btn-ghost:hover { background: #f7fafc; color: #4a5568; }

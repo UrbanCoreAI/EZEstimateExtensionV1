@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keel Quick Quote</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:        #1a1a2e;
+      --navy-mid:    #232342;
+      --gold:        #e8b84b;
+      --gold-dark:   #c9983a;
+      --gold-light:  #fdf3d8;
+      --surface:     #f4f5f8;
+      --card:        #ffffff;
+      --text:        #1e293b;
+      --muted:       #64748b;
+      --border:      #e2e8f0;
+      --border-mid:  #cbd5e1;
+      --success-bg:  #f0fdf4;
+      --success-bdr: #86efac;
+      --error-bg:    #fff1f2;
+      --error-bdr:   #fda4af;
+      --info-bg:     #eff6ff;
+      --info-bdr:    #93c5fd;
+      --radius:      10px;
+      --shadow:      0 1px 3px rgba(0,0,0,.07), 0 4px 16px rgba(0,0,0,.05);
+    }
+
+    html { font-size: 15px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--navy);
+      padding: 0 28px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(0,0,0,.3);
+    }
+
+    .logo-mark {
+      width: 38px; height: 38px;
+      background: var(--gold);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800;
+      color: var(--navy);
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+
+    .brand-name {
+      font-size: 17px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.03em;
+      margin-top: 1px;
+    }
+
+    /* ── Main layout ── */
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    .page-intro {
+      margin-bottom: 22px;
+    }
+    .page-intro h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--navy);
+      letter-spacing: -0.4px;
+    }
+    .page-intro p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── Form grid ── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 620px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 20px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--navy);
+    }
+
+    .card-unit {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* ── Field rows ── */
+    .field-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .field-row:last-child { border-bottom: none; }
+
+    .field-label {
+      font-size: 13px;
+      color: var(--text);
+      flex: 1;
+      line-height: 1.3;
+    }
+
+    .field-input {
+      width: 90px;
+      height: 32px;
+      border: 1px solid var(--border-mid);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 13px;
+      color: var(--text);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      background: #fafbfc;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      flex-shrink: 0;
+    }
+    .field-input:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(232,184,75,0.2);
+      background: #fff;
+    }
+    .field-input::placeholder { color: #c0c8d4; }
+
+    /* ── Actions ── */
+    .action-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .lender-check {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      flex: 1;
+      min-width: 200px;
+    }
+    .lender-check input[type="checkbox"] {
+      width: 15px; height: 15px;
+      accent-color: var(--gold);
+      cursor: pointer;
+    }
+
+    .btn-go {
+      height: 40px;
+      padding: 0 28px;
+      background: var(--gold);
+      color: var(--navy);
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn-go:hover { background: var(--gold-dark); }
+    .btn-go:active { transform: scale(0.97); }
+    .btn-go:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-clear {
+      height: 40px;
+      padding: 0 18px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border-mid);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .btn-clear:hover { background: var(--surface); color: var(--text); }
+
+    /* ── Status bar ── */
+    .status-bar {
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 14px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-bar.visible { display: flex; }
+    .status-bar.success { background: var(--success-bg); border: 1px solid var(--success-bdr); color: #15803d; }
+    .status-bar.error   { background: var(--error-bg);   border: 1px solid var(--error-bdr);   color: #be123c; }
+    .status-bar.info    { background: var(--info-bg);     border: 1px solid var(--info-bdr);    color: #1d4ed8; }
+
+    /* ── Prereq + Estimate section ── */
+    .prereq-section {
+      margin-top: 20px;
+      display: none;
+    }
+    .prereq-section.visible { display: block; }
+
+    .prereq-card {
+      background: var(--gold-light);
+      border: 1px solid #f0d080;
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 14px;
+    }
+
+    .prereq-card p {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 10px;
+    }
+
+    .prereq-card ol {
+      padding-left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .prereq-card li {
+      font-size: 13px;
+      color: #4a3a00;
+      line-height: 1.5;
+    }
+
+    .prereq-card li strong {
+      font-weight: 600;
+      color: var(--navy);
+    }
+
+    .estimate-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn-estimate {
+      height: 42px;
+      padding: 0 28px;
+      background: var(--navy);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-estimate:hover { background: var(--navy-mid); }
+    .btn-estimate:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .estimate-log {
+      background: var(--navy);
+      color: #a8b4c4;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 12px;
+      font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+      line-height: 1.7;
+      max-height: 280px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      margin-top: 14px;
+      display: none;
+    }
+    .estimate-log.visible { display: block; }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 6px 0;
+    }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(0,0,0,0.15);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">EZ</div>
+  <div>
+    <div class="brand-name">Keel Quick Quote</div>
+    <div class="brand-sub">KeelEZEstimate System</div>
+  </div>
+</header>
+
+<main>
+  <div class="page-intro">
+    <h1>Manual Entry</h1>
+    <p>Enter measurements below, then press Go to write values to the estimate sheet.</p>
+  </div>
+
+  <div class="form-grid">
+
+    <!-- Left: Building Areas -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Building Areas</span>
+        <span class="card-unit">Square Feet</span>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label">Basement</span>
+        <input class="field-input" type="number" data-key="basement" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">1st Floor</span>
+        <input class="field-input" type="number" data-key="1st floor" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">2nd Floor</span>
+        <input class="field-input" type="number" data-key="2nd floor" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">3rd Floor</span>
+        <input class="field-input" type="number" data-key="3rd floor" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Attic w/ Storage</span>
+        <input class="field-input" type="number" data-key="attic with storage" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Habitable Attic</span>
+        <input class="field-input" type="number" data-key="habitable attic" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Front Porch</span>
+        <input class="field-input" type="number" data-key="front porch" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rear Porch</span>
+        <input class="field-input" type="number" data-key="rear porch" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Rear Deck</span>
+        <input class="field-input" type="number" data-key="rear deck" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Garage</span>
+        <input class="field-input" type="number" data-key="garage" placeholder="0" min="0">
+      </div>
+
+      <div class="divider" style="margin: 10px 0 4px;"></div>
+
+      <div class="field-row">
+        <span class="field-label">Cabinets <span style="color:var(--muted);font-size:12px">(LF)</span></span>
+        <input class="field-input" type="number" data-key="cabinets lf" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">Countertops <span style="color:var(--muted);font-size:12px">(LF)</span></span>
+        <input class="field-input" type="number" data-key="countertops lf" placeholder="0" min="0">
+      </div>
+    </div>
+
+    <!-- Right: Counts & Areas -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Counts &amp; Areas</span>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label"># Exterior Doors</span>
+        <input class="field-input" type="number" data-key="# of exterior doors" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Windows</span>
+        <input class="field-input" type="number" data-key="# of windows" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Baths</span>
+        <input class="field-input" type="number" data-key="# of baths" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Staircases</span>
+        <input class="field-input" type="number" data-key="# of staircases" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Porch Columns</span>
+        <input class="field-input" type="number" data-key="# of front porch columns" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Garage Doors</span>
+        <input class="field-input" type="number" data-key="# of garage doors" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label"># Interior Doors</span>
+        <input class="field-input" type="number" data-key="# of interior doors" placeholder="0" min="0">
+      </div>
+
+      <div class="divider" style="margin: 10px 0 4px;"></div>
+
+      <div class="field-row">
+        <span class="field-label">SF Carpet</span>
+        <input class="field-input" type="number" data-key="sf of carpet" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">SF Hardwood</span>
+        <input class="field-input" type="number" data-key="sf of hardwood" placeholder="0" min="0">
+      </div>
+      <div class="field-row">
+        <span class="field-label">SF Tile</span>
+        <input class="field-input" type="number" data-key="sf of tile" placeholder="0" min="0">
+      </div>
+    </div>
+
+  </div><!-- /.form-grid -->
+
+  <!-- Action row -->
+  <div class="action-card">
+    <label class="lender-check">
+      <input type="checkbox" id="chk-lender">
+      Preferred Lender Incentive
+    </label>
+    <button id="btn-go" class="btn-go">Go →</button>
+    <button id="btn-clear" class="btn-clear">Clear</button>
+  </div>
+
+  <!-- Status -->
+  <div id="status-bar" class="status-bar"></div>
+
+  <!-- Prereq notice + Write to Estimate -->
+  <div id="prereq-section" class="prereq-section">
+    <div class="prereq-card">
+      <p>Before writing to estimate, make sure you have:</p>
+      <ol>
+        <li><strong>1.</strong> The Job created in Buildertrend</li>
+        <li><strong>2.</strong> The Estimate Template <strong>"Test Conceptual Budget Template"</strong> in the estimate tab</li>
+        <li><strong>3.</strong> One Estimate tab open</li>
+      </ol>
+    </div>
+    <div class="estimate-row">
+      <button id="btn-write-estimate" class="btn-estimate">Write to Estimate</button>
+    </div>
+    <div id="estimate-log" class="estimate-log"></div>
+  </div>
+
+</main>
+
+<script>
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function sendMsg(action, payload) {
+    return new Promise(function(resolve, reject) {
+      chrome.runtime.sendMessage(Object.assign({ action: action }, payload), function(res) {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!res || !res.ok) return reject(new Error((res && res.error) || 'Unknown error'));
+        resolve(res);
+      });
+    });
+  }
+
+  var statusBar = document.getElementById('status-bar');
+  function showStatus(msg, type, spinner) {
+    statusBar.className = 'status-bar visible ' + (type || 'info');
+    statusBar.innerHTML = (spinner ? '<span class="spinner"></span>' : '') + msg;
+  }
+  function hideStatus() {
+    statusBar.className = 'status-bar';
+    statusBar.textContent = '';
+  }
+
+  // ── Write to Sheet ───────────────────────────────────────────────────────────
+
+  document.getElementById('btn-go').addEventListener('click', async function() {
+    var btn = this;
+    var values = {};
+    document.querySelectorAll('.field-input').forEach(function(inp) {
+      if (inp.value.trim() !== '') values[inp.dataset.key] = parseFloat(inp.value);
+    });
+
+    if (!Object.keys(values).length) {
+      showStatus('No values entered — fill in at least one field before pressing Go.', 'error');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Writing…';
+    showStatus('Writing to Google Sheet…', 'info', true);
+
+    try {
+      var res = await sendMsg('WRITE_VALUES', { values: values });
+      showStatus('✓ Written ' + res.written + ' value(s) to sheet successfully.', 'success');
+      document.getElementById('prereq-section').classList.add('visible');
+    } catch(e) {
+      showStatus('Error writing to sheet: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Go →';
+    }
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', function() {
+    document.querySelectorAll('.field-input').forEach(function(i) { i.value = ''; });
+    hideStatus();
+    document.getElementById('prereq-section').classList.remove('visible');
+    document.getElementById('estimate-log').classList.remove('visible');
+    document.getElementById('estimate-log').textContent = '';
+  });
+
+  // ── Write to Estimate ────────────────────────────────────────────────────────
+
+  document.getElementById('btn-write-estimate').addEventListener('click', writeToEstimate);
+
+  async function writeToEstimate() {
+    var btn = document.getElementById('btn-write-estimate');
+    var logEl = document.getElementById('estimate-log');
+
+    btn.disabled = true;
+    btn.textContent = 'Working…';
+    logEl.textContent = '';
+    logEl.classList.add('visible');
+
+    var lender = document.getElementById('chk-lender').checked;
+
+    function log(msg) {
+      logEl.textContent += msg + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    try {
+      log('Reading sheet values…');
+      var cells = await sendMsg('READ_CELLS_BATCH', {
+        ranges: ['I13','D32','D46','D50','D56','D59','D62','D68','I9','I10','I11',
+                 'I18','I19','I23','I24','I26',
+                 'D86','D88','D89','D90','D91','D92','D93','D94','D99']
+      });
+      var c = cells.data;
+      var n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
+
+      var items = [
+        { name: 'Total Fixed Cost',                                                    qty: 1 },
+        { name: 'Total Finished SF & Unfinished (Under Roof)',                         qty: n(c['I13']) },
+        { name: 'Total Finished SF',                                                   qty: n(c['D46']) },
+        { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',     qty: n(c['D32']) },
+        { name: 'Total Garage SF',                                                     qty: n(c['D62']) },
+        { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D56']) },
+        { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D50']) },
+        { name: 'Total Finished 1st Floor SF',                                        qty: n(c['D59']) },
+        { name: 'Total for Decks & Porches',                                          qty: n(c['I9']) + n(c['I10']) + n(c['I11']) },
+        { name: 'Interior Stairs',    qty: n(c['I23']) },
+        { name: 'Exterior Doors',     qty: n(c['I18']) },
+        { name: 'Windows',            qty: n(c['I19']) },
+        { name: 'Porch Columns',      qty: n(c['I24']) },
+        { name: 'Interior Doors',     qty: n(c['I26']) },
+        { name: 'Garage Door',        qty: n(c['D68']) },
+        { name: 'Number of Baths',    qty: n(c['D93']) },
+        { name: 'Accessories Allowance',       qty: n(c['D86']) },
+        { name: 'Appliance Allowance',         qty: 1 },
+        { name: 'Cabinet Allowance',           qty: n(c['D88']) },
+        { name: 'Carpet Allowance',            qty: n(c['D89']) },
+        { name: 'Countertop Allowance',        qty: n(c['D90']) },
+        { name: 'Hardwood Flooring Allowance', qty: n(c['D91']) },
+        { name: 'Lighting Fixture Allowance',  qty: n(c['D92']) },
+        { name: 'Plumbing Fixture Allowance',  qty: n(c['D93']) },
+        { name: 'Tile Allowance',              qty: n(c['D94']) },
+        { name: 'Clearing Allowance',    qty: 1 },
+        { name: 'Driveway Allowance',    qty: 1 },
+        { name: 'Landscaping Allowance', qty: n(c['D99']) },
+        { name: 'Tap Fees',              qty: 1 },
+      ];
+      if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
+
+      log('Found ' + items.length + ' items. Opening BuilderTrend…');
+
+      var tabs = await chrome.tabs.query({});
+      var tab = tabs.find(function(t) { return t.url && t.url.includes('buildertrend') && t.url.toLowerCase().includes('estimate'); })
+             || tabs.find(function(t) { return t.url && t.url.includes('buildertrend'); });
+      if (!tab) throw new Error('No BuilderTrend Estimate tab found. Open buildertrend.net/app/Estimate.');
+
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      await new Promise(function(r) { setTimeout(r, 400); });
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: function() { window.__dukeWriteStop = false; }
+      }).catch(function(){});
+
+      var result = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: async function(itemsList) {
+          try {
+            var _log = [];
+            var _delay = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
+
+            function reactSet(input, val) {
+              var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+              setter.call(input, String(val));
+              input.dispatchEvent(new Event('input',  { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            function waitForModalClose(maxWaitMs) {
+              maxWaitMs = maxWaitMs || 2000;
+              return new Promise(function(resolve) {
+                var startWait = performance.now();
+                var checkInterval = setInterval(function() {
+                  var modal = document.querySelector('.ant-modal-wrap, .ant-modal-root, [class*="modal"][class*="show"]');
+                  var elapsed = performance.now() - startWait;
+                  if (!modal || elapsed >= maxWaitMs) { clearInterval(checkInterval); resolve(elapsed); }
+                }, 50);
+              });
+            }
+
+            async function setQty(name, qty, isUnitCost) {
+              var needle = name.toLowerCase();
+              var words = needle.split(/\s+/).filter(Boolean);
+              var startTime = performance.now();
+
+              var si = null;
+              for (var wi = 0; wi < 20; wi++) {
+                si = document.getElementById('rc_select_17');
+                if (!si) si = document.getElementById('rc_select_1');
+                if (!si) {
+                  var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(btn) {
+                    return btn.textContent && btn.textContent.includes('Collapse all');
+                  });
+                  if (collapseBtn) {
+                    var parent = collapseBtn.closest('[class*="header"], [class*="control"], div');
+                    if (parent) si = parent.querySelector('input[role="combobox"].ant-select-selection-search-input');
+                  }
+                }
+                if (!si) {
+                  var candidates = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
+                  candidates = candidates.filter(function(el) {
+                    var id = el.id || '';
+                    return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
+                  });
+                  si = candidates[0];
+                }
+                if (si) break;
+                await _delay(100);
+              }
+              if (!si) { _log.push('✗ ' + name + ' — search bar not found'); return; }
+
+              var container = si.closest('.ant-select-selector') || si.parentElement;
+              if (container) { container.click(); await _delay(200); }
+              si.focus();
+              await _delay(100);
+
+              var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+              nativeSetter.call(si, name);
+              si.dispatchEvent(new Event('input',  { bubbles: true }));
+              si.dispatchEvent(new Event('change', { bubbles: true }));
+              await _delay(500);
+
+              var opts = document.querySelectorAll('.LineItemResult.LineItem');
+              var clicked = false;
+              for (var o = 0; o < opts.length; o++) {
+                var optTxt = (opts[o].innerText || '').trim().toLowerCase();
+                if (words.every(function(w){ return optTxt.includes(w); })) {
+                  opts[o].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                  opts[o].dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+                  opts[o].click();
+                  clicked = true;
+                  break;
+                }
+              }
+              if (!clicked) { _log.push('○ ' + name + ' — not in dropdown'); return; }
+
+              function isInGroupHeader(node) {
+                var ownCls = node.className || '';
+                if (ownCls.includes('proposalFormatGroupCellTitle') || ownCls.includes('proposalFormatGroupCellTitleReadonly')) return true;
+                var n = node.parentElement;
+                while (n && n !== document.body) {
+                  var cc = n.className || '';
+                  if (cc.includes('WorksheetGroupCellActions') || cc.includes('proposalFormatGroupCell')) return true;
+                  n = n.parentElement;
+                }
+                return false;
+              }
+
+              function findValueDisplay() {
+                var vds = document.querySelectorAll('.ValueDisplay');
+                for (var v = 0; v < vds.length; v++) {
+                  if (!vds[v].offsetHeight || isInGroupHeader(vds[v])) continue;
+                  if ((vds[v].innerText || '').trim().toLowerCase() === needle) return vds[v];
+                }
+                for (var v2 = 0; v2 < vds.length; v2++) {
+                  if (!vds[v2].offsetHeight || isInGroupHeader(vds[v2])) continue;
+                  var t = (vds[v2].innerText || '').trim().toLowerCase();
+                  if (words.every(function(w) { return t.includes(w); })) return vds[v2];
+                }
+                return null;
+              }
+
+              var el = null;
+              for (var attempt = 0; attempt < 15; attempt++) {
+                el = findValueDisplay();
+                if (el) break;
+                await _delay(100);
+              }
+              if (!el) { _log.push('○ ' + name + ' — ValueDisplay not found'); return; }
+
+              el.scrollIntoView({ behavior: 'instant', block: 'center' });
+              await _delay(300);
+              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+              el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+              el.click();
+              await _delay(400);
+
+              var qtyInput = null;
+              if (isUnitCost) qtyInput = document.querySelector('input[data-testid="unitCost"], input#unitCost');
+              if (!qtyInput) {
+                qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
+                        || document.querySelector('input[role="spinbutton"]')
+                        || document.querySelector('input.ant-input-number-input');
+              }
+              if (!qtyInput) { _log.push('○ ' + name + ' — qty input not found'); return; }
+
+              qtyInput.focus();
+              await _delay(150);
+              qtyInput.select();
+              qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, ctrlKey: true, bubbles: true }));
+              await _delay(50);
+              qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', keyCode: 46, bubbles: true }));
+              reactSet(qtyInput, '');
+              qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+              await _delay(100);
+
+              var roundedQty = Math.round(qty * 100) / 100;
+              var valStr = String(roundedQty);
+              var setter2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+              for (var ci = 0; ci < valStr.length; ci++) {
+                var ch = valStr[ci];
+                var code = ch.charCodeAt(0);
+                qtyInput.dispatchEvent(new KeyboardEvent('keydown',  { key: ch, keyCode: code, bubbles: true }));
+                qtyInput.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, bubbles: true }));
+                setter2.call(qtyInput, valStr.slice(0, ci + 1));
+                qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
+                qtyInput.dispatchEvent(new KeyboardEvent('keyup',    { key: ch, keyCode: code, bubbles: true }));
+                await _delay(20);
+              }
+              await _delay(200);
+
+              var saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
+              if (!saveBtn) {
+                for (var s = 0; s < 15; s++) {
+                  await _delay(100);
+                  saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
+                  if (saveBtn) break;
+                }
+              }
+              if (saveBtn) {
+                saveBtn.click();
+                await waitForModalClose(2000);
+              } else {
+                qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+                await _delay(500);
+              }
+
+              var totalTime = performance.now() - startTime;
+              _log.push('✓ ' + name + ' → ' + qty + (isUnitCost ? ' (unit cost)' : ' (qty)') + ' (' + totalTime.toFixed(0) + 'ms)');
+            }
+
+            var writeStartTime = performance.now();
+            for (var i = 0; i < itemsList.length; i++) {
+              if (window.__dukeWriteStop) { _log.push('⏹ Stopped'); break; }
+              await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
+            }
+
+            await _delay(1500);
+
+            var totalVal = 0;
+            var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
+            if (footerSpan) {
+              var footerTxt = (footerSpan.innerText || '').trim();
+              var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
+              if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
+            }
+            if (totalVal > 0) {
+              _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
+              await setQty('Realtor Fees', totalVal, true);
+            } else {
+              _log.push('⚠ Could not detect estimate total for Realtor Fees');
+            }
+
+            // Delete ALL existing placeholders (same search bar as setQty)
+            _log.push('Clearing placeholders…');
+            await (async function() {
+              try {
+                async function getDelSearchInput() {
+                  var si = null;
+                  for (var wi = 0; wi < 20; wi++) {
+                    si = document.getElementById('rc_select_17');
+                    if (!si) si = document.getElementById('rc_select_1');
+                    if (!si) {
+                      var cb = Array.from(document.querySelectorAll('button')).find(function(b) { return b.textContent && b.textContent.includes('Collapse all'); });
+                      if (cb) { var par = cb.closest('[class*="header"], [class*="control"], div'); if (par) si = par.querySelector('input[role="combobox"].ant-select-selection-search-input'); }
+                    }
+                    if (!si) {
+                      si = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input')).filter(function(el) {
+                        var id = el.id || ''; return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
+                      })[0];
+                    }
+                    if (si) break;
+                    await _delay(100);
+                  }
+                  return si || null;
+                }
+
+                var deletedCount = 0;
+                var maxLoops = 1;
+
+                for (var loop = 0; loop < maxLoops; loop++) {
+                  var si = await getDelSearchInput();
+                  if (!si) { _log.push('⚠ Search bar not found — stopping placeholder delete'); break; }
+
+                  var selEl = si.closest('.ant-select-selector') || si.parentElement;
+                  if (selEl) { selEl.click(); await _delay(200); }
+                  si.focus();
+                  await _delay(100);
+                  reactSet(si, '');
+                  await _delay(100);
+                  reactSet(si, 'place');
+                  await _delay(1200);
+
+                  var target = null;
+                  for (var ri = 0; ri < 30; ri++) {
+                    target = document.querySelector('.LineItemResult.LineItem');
+                    if (target) break;
+                    await _delay(100);
+                  }
+                  if (!target) { document.body.click(); await _delay(200); break; }
+
+                  target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                  target.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+                  target.click();
+                  await _delay(1000);
+
+                  // Pick the BTIconActions button closest to viewport center
+                  var vcY = window.innerHeight / 2;
+                  var actBtn = null;
+                  var actionIcons = Array.from(document.querySelectorAll('[data-icon-name="BTIconActions"]'));
+                  var closestDist = Infinity;
+                  for (var ai = 0; ai < actionIcons.length; ai++) {
+                    var rect = actionIcons[ai].getBoundingClientRect();
+                    var dist = Math.abs((rect.top + rect.height / 2) - vcY);
+                    if (dist < closestDist) { closestDist = dist; actBtn = actionIcons[ai].closest('button, [role="button"]') || actionIcons[ai].parentElement; }
+                  }
+                  if (!actBtn) { _log.push('⚠ Actions button not found on loop ' + (loop + 1) + ' — stopping'); break; }
+
+                  actBtn.click();
+                  await _delay(400);
+
+                  var delOption = Array.from(document.querySelectorAll('.ant-dropdown-menu-title-content')).find(function(el) { return el.textContent.trim() === 'Delete'; });
+                  if (!delOption) { document.body.click(); _log.push('⚠ Delete option not found on loop ' + (loop + 1) + ' — stopping'); break; }
+                  delOption.click();
+                  await _delay(500);
+
+                  var confirmBtn = Array.from(document.querySelectorAll('button span')).find(function(el) { return el.textContent.trim() === 'Delete'; });
+                  if (!confirmBtn) { _log.push('⚠ Confirm Delete not found on loop ' + (loop + 1) + ' — stopping'); break; }
+                  confirmBtn.closest('button').click();
+                  await _delay(3000);
+                  deletedCount++;
+                }
+
+                if (deletedCount > 0) _log.push('✓ Deleted ' + deletedCount + ' placeholder(s)');
+                else _log.push('⚠ No placeholders found — continuing');
+              } catch(e) { _log.push('⚠ Placeholder delete error: ' + e.message); }
+            })();
+
+            var totalWriteTime = performance.now() - writeStartTime;
+            var totalSeconds = totalWriteTime / 1000;
+            var minutes = Math.floor(totalSeconds / 60);
+            var seconds = (totalSeconds % 60).toFixed(1);
+            var timeFormat = minutes > 0 ? minutes + 'm ' + seconds + 's' : seconds + 's';
+            _log.push('');
+            _log.push('═══ TOTAL TIME: ' + timeFormat + ' ═══');
+
+            return {
+              ok:    _log.filter(function(l){ return l.startsWith('✓'); }).length,
+              fail:  _log.filter(function(l){ return l.startsWith('✗'); }).length,
+              lines: _log
+            };
+          } catch(e) {
+            return { ok: 0, fail: 1, lines: ['✗ Script error: ' + e.message] };
+          }
+        },
+        args: [items]
+      });
+
+      var res2 = result && result[0] && result[0].result;
+      if (res2 && res2.lines) {
+        res2.lines.forEach(function(l) { log(l); });
+        if (res2.fail) {
+          showStatus('Wrote ' + res2.ok + ' items · ' + res2.fail + ' failed (see log below)', 'error');
+        } else {
+          showStatus('✓ Wrote ' + res2.ok + ' items to estimate successfully.', 'success');
+        }
+      } else if (result && result[0] && result[0].error) {
+        log('⚠ Script error: ' + result[0].error.message);
+        showStatus('Script error — see log below.', 'error');
+      } else {
+        showStatus('Write to Estimate complete.', 'success');
+      }
+
+    } catch(e) {
+      log('ERROR: ' + e.message);
+      showStatus('Write to Estimate failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Write to Estimate';
+    }
+  }
+
+
+</script>
+</body>
+</html>

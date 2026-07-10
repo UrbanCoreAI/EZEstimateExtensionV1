@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Duke Estimating - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <span class="logo">D</span>
+      <div>
+        <h1>Duke Estimating Settings</h1>
+        <p>Configure your Google Sheets &amp; AI integration</p>
+      </div>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <!-- OpenAI -->
+    <section class="card">
+      <h2>🤖 OpenAI API Key <span class="badge">GPT-4o Vision</span></h2>
+      <p class="help">Used to analyze floor plan images — counts doors, windows, baths, columns, staircases, and garage doors automatically. Get your key at <a href="#" id="link-openai">platform.openai.com ↗</a></p>
+      <div class="field">
+        <label for="openaiKey">API Key</label>
+        <input type="password" id="openaiKey" placeholder="sk-…">
+        <span class="field-hint">Starts with sk-  •  ~$0.02 per plan scan  •  Never leaves your browser</span>
+      </div>
+      <button id="btn-test-openai" class="btn-secondary" style="margin-top:6px">Test OpenAI Key</button>
+    </section>
+
+    <!-- Claude (Anthropic) -->
+    <section class="card">
+      <h2>🧠 Anthropic API Key <span class="badge">Claude Vision</span></h2>
+      <p class="help">Alternative AI for floor plan analysis. Claude 3.5 Sonnet is excellent at visual counting tasks. Get your key at <a href="#" id="link-anthropic">console.anthropic.com ↗</a></p>
+      <div class="field">
+        <label for="claudeKey">API Key</label>
+        <input type="password" id="claudeKey" placeholder="sk-ant-…">
+        <span class="field-hint">Starts with sk-ant-  •  Never leaves your browser</span>
+      </div>
+      <button id="btn-test-claude" class="btn-secondary" style="margin-top:6px">Test Claude Key</button>
+    </section>
+
+    <!-- Gemini (Google) -->
+    <section class="card">
+      <h2>✨ Google Gemini API Key <span class="badge">Gemini Vision</span></h2>
+      <p class="help">Alternative AI for floor plan analysis. Gemini 2.0 Flash is fast and capable. Get your key at <a href="#" id="link-gemini">aistudio.google.com ↗</a></p>
+      <div class="field">
+        <label for="geminiKey">API Key</label>
+        <input type="password" id="geminiKey" placeholder="AIza…">
+        <span class="field-hint">Never leaves your browser</span>
+      </div>
+      <button id="btn-test-gemini" class="btn-secondary" style="margin-top:6px">Test Gemini Key</button>
+    </section>
+
+    <!-- Google OAuth -->
+    <section class="card">
+      <h2>📊 Google OAuth2 Client ID</h2>
+      <p class="help">Required to read &amp; write your Google Sheet. <a href="#" id="link-setup">Setup guide ↗</a></p>
+      <div class="field">
+        <label for="clientId">Client ID</label>
+        <input type="text" id="clientId" placeholder="xxxxxxxxxx.apps.googleusercontent.com">
+      </div>
+      <div class="info-box">
+        <strong>One-time setup:</strong>
+        <ol>
+          <li>Go to <strong>console.cloud.google.com</strong> → New Project</li>
+          <li>Enable <strong>Google Sheets API</strong></li>
+          <li>Create credentials → <strong>OAuth 2.0 Client ID</strong> → <em>Chrome Extension</em></li>
+          <li>Item ID = your Chrome extension ID (from chrome://extensions)</li>
+          <li>Copy the Client ID and paste above</li>
+        </ol>
+        <strong>Your redirect URI:</strong><br>
+        <code id="redirect-uri">Loading…</code>
+      </div>
+    </section>
+
+    <!-- Sheet Config -->
+    <section class="card">
+      <h2>📋 Google Sheet Configuration</h2>
+      <div class="field">
+        <label for="sheetId">Spreadsheet ID</label>
+        <input type="text" id="sheetId" placeholder="1iO37IiTagtu4OGEZSHA5C62tPRc5HOKMpq0UcsUI9ig">
+        <span class="field-hint">The long ID in your Google Sheets URL</span>
+      </div>
+      <div class="field">
+        <label for="sheetName">Sheet Tab Name</label>
+        <input type="text" id="sheetName" placeholder="2026 CUSTOM PLAN">
+        <span class="field-hint">Exact tab name at the bottom of your spreadsheet</span>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="btn-save" class="btn-primary">Save Settings</button>
+      <button id="btn-signout" class="btn-ghost">Sign Out of Google</button>
+      <button id="btn-test-sheets" class="btn-secondary">Test Sheets Connection</button>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

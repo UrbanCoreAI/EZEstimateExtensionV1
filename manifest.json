@@ -1,0 +1,82 @@
+{
+  "manifest_version": 3,
+  "name": "Duke Estimating - BuilderTrend Sync",
+  "version": "1.0.1",
+  "description": "Sync BuilderTrend takeoff measurements to your Google Sheets estimating spreadsheet",
+  "permissions": ["identity", "storage", "scripting", "tabs", "tabCapture", "windows", "offscreen", "webNavigation"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://sheets.googleapis.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.buildertrend.net/*",
+        "*://buildertrend.net/*",
+        "*://app.squaretakeoff.com/*",
+        "*://*.squaretakeoff.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://alanamac222.github.io/*"
+      ],
+      "js": ["webpage-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Duke Estimating Sync",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "web_accessible_resources": [{
+    "resources": ["auto-fit.js", "viewer.html", "panel.html", "offscreen.html", "html2canvas.min.js", "jspdf.umd.min.js",
+                  "lib/pdf.min.js", "lib/pdf.worker.min.js",
+                  "lib/tesseract.min.js", "lib/worker.min.js", "lib/tesseract-core.wasm.js", "lib/tesseract-core-simd.wasm.js", "lib/eng.traineddata.gz",
+                  "training/kiawah_floor1.jpg","training/kiawah_floor2.jpg",
+                  "training/bonaire_floor1.png",
+                  "training/bonaire_floor2.png",
+                  "training/symbols/double_door_symbol_examples.png",
+                  "training/symbols/bonaire_7_columns_annotated.png",
+                  "training/symbols/bonaire_floor1_15_windows_annotated.png",
+                  "training/symbols/bonaire_floor2_7_windows_annotated.png",
+                  "training/symbols/bonaire_4_ext_doors_annotated.png",
+                  "training/symbols/sullivan_10_windows_annotated.png",
+                  "training/symbols/sullivan_2_exterior_doors_annotated.png",
+                  "training/symbols/sullivan_15_interior_doors_annotated.png",
+                  "training/symbols/caroline_3_ext_doors_annotated.png",
+                  "training/symbols/caroline_floor1_9_int_doors_annotated.png",
+                  "training/symbols/caroline_floor2_19_int_doors_annotated.png",
+                  "training/symbols/caroline_floor1_14_windows_annotated.png",
+                  "training/symbols/caroline_floor2_13_windows_annotated.png",
+                  "training/symbols/primary_bath_5_doors_annotated.png",
+                  "training/symbols/sanibel_12_porch_columns_annotated.png",
+                  "training/symbols/sullivan_3_columns_annotated.png",
+                  "training/symbols/sullivan_exterior_doors_with_stairs_annotated.png",
+                  "training/symbols/interior_stairs_reference.png",
+                  "training/symbols/interior_stairs_handdrawn.png",
+                  "training/symbols/sullivan_plan_0_stairs_0_garage.jpg"],
+    "matches": ["<all_urls>"]
+  }],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

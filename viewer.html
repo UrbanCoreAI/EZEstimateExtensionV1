@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Duke Estimating — Annotated Plan</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>🤖 GPT-4o Annotated Plan</h1>
+  <div class="legend" id="legend"></div>
+</div>
+<div class="counts-bar" id="counts-bar"></div>
+
+<div class="viewport" id="viewport">
+  <div id="loading"><span class="spin">⟳</span><br>Loading annotated plan…</div>
+  <div id="plan-wrap">
+    <canvas id="plan-canvas"></canvas>
+    <svg id="ann-svg"></svg>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+<div class="zoom-bar">
+  <button id="zin">+</button>
+  <button id="zout">−</button>
+  <button id="zfit">FIT</button>
+</div>
+
+<script src="viewer.js"></script>
+</body>
+</html>

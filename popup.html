@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Duke Estimating Sync</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <span class="logo">D</span>
+      <div>
+        <div class="title">Duke Estimating</div>
+        <div class="subtitle">BuilderTrend → Sheets Sync</div>
+      </div>
+    </div>
+    <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar" class="status-bar hidden"></div>
+
+  <!-- ── AI ANALYZE PANEL ── -->
+  <!-- AI results shown after upload analysis -->
+  <div class="ai-panel">
+    <div id="ai-results" class="ai-results hidden">
+      <div class="ai-results-title">GPT-4o Counts <span id="ai-confidence" class="ai-badge"></span></div>
+      <div id="ai-grid" class="ai-grid"></div>
+      <div class="ai-actions">
+        <button id="btn-write-ai" class="btn-primary">Write to Sheet</button>
+      </div>
+    </div>
+    <div id="ai-loading" class="ai-loading hidden">
+      <div class="spinner"></div>
+      <span>GPT-4o is reading the plan…</span>
+    </div>
+  </div>
+
+  <!-- ── GRAB TAKEOFF PANEL ── -->
+  <div class="grab-panel">
+    <div class="grab-header">
+      <span class="grab-icon">📐</span>
+      <div>
+        <div class="grab-title">BuilderTrend Takeoff</div>
+        <div class="grab-sub">Reads your takeoff measurements · zeros unfilled categories</div>
+      </div>
+      <button id="btn-grab" class="btn-grab">Grab Takeoff</button>
+    </div>
+    <div id="grab-results" class="grab-results hidden">
+      <div id="grab-status" class="grab-status"></div>
+      <div id="grab-grid" class="grab-grid"></div>
+      <div class="grab-actions">
+        <button id="btn-write-grab" class="btn-primary">Write All to Sheet</button>
+        <button id="btn-rescan" class="btn-secondary">Re-scan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MANUAL ENTRY ── -->
+  <details class="manual-panel">
+    <summary class="panel-label">Manual Entry ▾</summary>
+    <div class="manual-grid">
+      <div class="manual-section-title">Building Areas (SF)</div>
+      <div class="manual-row"><label>Basement</label><input type="number" data-key="basement" placeholder="0"></div>
+      <div class="manual-row"><label>1st Floor</label><input type="number" data-key="1st floor" placeholder="0"></div>
+      <div class="manual-row"><label>2nd Floor</label><input type="number" data-key="2nd floor" placeholder="0"></div>
+      <div class="manual-row"><label>3rd Floor</label><input type="number" data-key="3rd floor" placeholder="0"></div>
+      <div class="manual-row"><label>Attic w/ Storage</label><input type="number" data-key="attic with storage" placeholder="0"></div>
+      <div class="manual-row"><label>Habitable Attic</label><input type="number" data-key="habitable attic" placeholder="0"></div>
+      <div class="manual-row"><label>Front Porch</label><input type="number" data-key="front porch" placeholder="0"></div>
+      <div class="manual-row"><label>Rear Porch</label><input type="number" data-key="rear porch" placeholder="0"></div>
+      <div class="manual-row"><label>Rear Deck</label><input type="number" data-key="rear deck" placeholder="0"></div>
+      <div class="manual-row"><label>Garage</label><input type="number" data-key="garage" placeholder="0"></div>
+      <div class="manual-row"><label>Cabinets (LF)</label><input type="number" data-key="cabinets lf" placeholder="0"></div>
+      <div class="manual-row"><label>Countertops (LF)</label><input type="number" data-key="countertops lf" placeholder="0"></div>
+      <div class="manual-section-title">Counts &amp; Areas</div>
+      <div class="manual-row"><label># Exterior Doors</label><input type="number" data-key="# of exterior doors" placeholder="0"></div>
+      <div class="manual-row"><label># Windows</label><input type="number" data-key="# of windows" placeholder="0"></div>
+      <div class="manual-row"><label># Baths</label><input type="number" data-key="# of baths" placeholder="0"></div>
+      <div class="manual-row"><label># Staircases</label><input type="number" data-key="# of staircases" placeholder="0"></div>
+      <div class="manual-row"><label># Porch Columns</label><input type="number" data-key="# of front porch columns" placeholder="0"></div>
+      <div class="manual-row"><label># Garage Doors</label><input type="number" data-key="# of garage doors" placeholder="0"></div>
+      <div class="manual-row"><label># Interior Doors</label><input type="number" data-key="# of interior doors" placeholder="0"></div>
+      <div class="manual-row"><label>SF Carpet</label><input type="number" data-key="sf of carpet" placeholder="0"></div>
+      <div class="manual-row"><label>SF Hardwood</label><input type="number" data-key="sf of hardwood" placeholder="0"></div>
+      <div class="manual-row"><label>SF Tile</label><input type="number" data-key="sf of tile" placeholder="0"></div>
+    </div>
+    <div class="manual-actions">
+      <button id="btn-write-manual" class="btn-primary">Write to Sheet</button>
+      <button id="btn-clear-manual" class="btn-ghost">Clear</button>
+    </div>
+  </details>
+
+  <!-- ── SHEET PREVIEW ── -->
+  <div class="sheet-section">
+    <div class="sheet-top-bar">
+      <div class="sheet-section-label">Sheet Preview</div>
+      <div class="sheet-zoom-controls">
+        <button class="sz-btn" id="btn-sz-out" title="Zoom out table">−</button>
+        <span class="sz-pct" id="sz-pct">100%</span>
+        <button class="sz-btn" id="btn-sz-in"  title="Zoom in table">+</button>
+      </div>
+    </div>
+    <div class="tab-nav">
+      <button class="tab-arrow" id="tab-prev" title="Previous section">‹</button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="fixed-costs">Fixed Costs</button>
+        <button class="tab-btn" data-tab="finished-unfinished">Fin. &amp; Unfin.</button>
+        <button class="tab-btn" data-tab="areas">Areas</button>
+        <button class="tab-btn" data-tab="allowances-permits">Allowances</button>
+      </div>
+      <button class="tab-arrow" id="tab-next" title="Next section">›</button>
+    </div>
+    <div id="sheet-loading" class="sheet-loading">Loading…</div>
+    <div id="sheet-error" class="sheet-error hidden"></div>
+    <div id="sheet-content" class="sheet-content hidden">
+      <table id="sheet-table">
+        <thead id="sheet-thead"></thead>
+        <tbody id="sheet-tbody"></tbody>
+      </table>
+    </div>
+    <button id="btn-refresh-sheet" class="btn-ghost refresh-btn">↻ Refresh Sheet</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
