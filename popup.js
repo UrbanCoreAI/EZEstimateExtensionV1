@@ -2009,6 +2009,17 @@ async function writeToEstimate() {
 
         await _delay(1500);
 
+        if (siteOptionsList && siteOptionsList.length) {
+          _log.push('');
+          _log.push('── Site Options ──');
+          for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
+            if (siteOptionsList[si2].existingLine) continue;
+            await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
+          }
+        }
+
+        await _delay(1000);
+
         // Realtor Fees — grab the grand total from BTGridFooterCell--ellipsis (the center total column)
         var totalVal = 0;
         var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
@@ -2022,16 +2033,6 @@ async function writeToEstimate() {
           await setQty('Realtor Fees', totalVal, true);
         } else {
           _log.push('⚠ Could not detect estimate total for Realtor Fees');
-        }
-
-
-        if (siteOptionsList && siteOptionsList.length) {
-          _log.push('');
-          _log.push('── Site Options ──');
-          for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
-            if (siteOptionsList[si2].existingLine) continue;
-            await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
-          }
         }
 
         var totalWriteTime = performance.now() - writeStartTime;
