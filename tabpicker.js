@@ -1508,6 +1508,22 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
       var lr = lockResult && lockResult[0] && lockResult[0].result;
       log('Lock result: status=' + (lr && lr.lockStatus) + ' verifyIntroLen=' + (lr && lr.verifyIntroLen));
       await delay(500);
+
+      // The proposal page's React app still holds the pre-lock text in memory
+      // (it fetched the draft before our PUT). Reload so it re-fetches fresh
+      // data — otherwise switching to Client Preview shows the stale in-memory text.
+      log('Reloading proposal page to sync saved text…');
+      setStatus('Reloading proposal page…');
+      await chrome.tabs.reload(tab.id);
+      await new Promise(function (resolve) {
+        function checkStatus() {
+          chrome.tabs.get(tab.id, function (t) {
+            if (t && t.status === 'complete') { resolve(); } else { setTimeout(checkStatus, 300); }
+          });
+        }
+        setTimeout(checkStatus, 800);
+      });
+      await delay(2500);
     }
 
     // Step 2: Click Client Preview tab
