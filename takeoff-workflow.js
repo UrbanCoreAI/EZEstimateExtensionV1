@@ -1398,6 +1398,63 @@
           <div class="tk-complete-msg">Sheet saved! Write to estimate?</div>
         </div>
 
+        <!-- Site Options dropdowns -->
+        <div id="tk-site-options" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#f8fafc;">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Sewer</label>
+            <select id="tk-so-sewer" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— None —</option>
+              <option value="City (No Septic)">City (No Septic)</option>
+              <option value="Conventional Septic">Conventional Septic</option>
+              <option value="Engineered Septic">Engineered Septic</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Water</label>
+            <select id="tk-so-water" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— City Water —</option>
+              <option value="Well">Well</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Municipal Tap Fees</label>
+            <select id="tk-so-tap" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— None —</option>
+              <option value="None (Well/Septic)">None (Well/Septic)</option>
+              <option value="Standard (12K)">Standard (12K)</option>
+              <option value="High (18K)">High (18K)</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Lot Clearing</label>
+            <select id="tk-so-clearing" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— None —</option>
+              <option value="Light">Light</option>
+              <option value="Moderate">Moderate</option>
+              <option value="Heavy">Heavy</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Driveway</label>
+            <select id="tk-so-driveway" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— None —</option>
+              <option value="Short Gravel">Short Gravel</option>
+              <option value="Standard (Gravel)">Standard (Gravel)</option>
+              <option value="Long Gravel">Long Gravel</option>
+              <option value="Asphalt">Asphalt</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <label style="font-size:10px;color:#64748b;font-weight:600;">Landscaping</label>
+            <select id="tk-so-landscaping" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="">— None —</option>
+              <option value="Basic">Basic</option>
+              <option value="Standard">Standard</option>
+              <option value="Extensive">Extensive</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Calculator -->
         <div id="tk-calc-section" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#f8fafc;">
           <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px;letter-spacing:.03em;">CALCULATOR</div>
@@ -1716,8 +1773,62 @@
         ];
         if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
 
+        // Read site option dropdowns (same as EXT_SITE_MAP in popup.js)
+        var TK_SITE_MAP = {
+          'tk-so-sewer': {
+            'City (No Septic)':    { row: 2,  parentGroup: '11 - Septic/Sewer',           title: 'Sewer - City (No Septic)',          existingLine: null },
+            'Conventional Septic': { row: 3,  parentGroup: '11 - Septic/Sewer',           title: 'Sewer - Conventional Septic',       existingLine: null },
+            'Engineered Septic':   { row: 4,  parentGroup: '11 - Septic/Sewer',           title: 'Sewer - Engineered Septic',         existingLine: null },
+          },
+          'tk-so-water': {
+            'Well':                { row: 6,  parentGroup: 'Well Allowance',               title: 'Water - Well',                      existingLine: null },
+          },
+          'tk-so-tap': {
+            'None (Well/Septic)':  { row: 7,  parentGroup: '06 - Municipal Tap Fees',     title: 'Municipal Tap Fees - None (Well/Septic)', existingLine: 'Tap Fees' },
+            'Standard (12K)':      { row: 8,  parentGroup: '06 - Municipal Tap Fees',     title: 'Municipal Tap Fees - Standard',     existingLine: 'Tap Fees' },
+            'High (18K)':          { row: 9,  parentGroup: '06 - Municipal Tap Fees',     title: 'Municipal Tap Fees - High',         existingLine: 'Tap Fees' },
+          },
+          'tk-so-clearing': {
+            'Light':               { row: 10, parentGroup: '09 - Lot Clearing/Site Prep', title: 'Lot Clearing - Light',              existingLine: 'Clearing Allowance' },
+            'Moderate':            { row: 11, parentGroup: '09 - Lot Clearing/Site Prep', title: 'Lot Clearing - Moderate',           existingLine: 'Clearing Allowance' },
+            'Heavy':               { row: 12, parentGroup: '09 - Lot Clearing/Site Prep', title: 'Lot Clearing - Heavy',              existingLine: 'Clearing Allowance' },
+          },
+          'tk-so-driveway': {
+            'Short Gravel':        { row: 13, parentGroup: 'Driveway Allowance',           title: 'Driveway - Short Gravel',           existingLine: 'Driveway Allowance' },
+            'Standard (Gravel)':   { row: 14, parentGroup: 'Driveway Allowance',           title: 'Driveway - Standard (Gravel)',      existingLine: 'Driveway Allowance' },
+            'Long Gravel':         { row: 15, parentGroup: 'Driveway Allowance',           title: 'Driveway - Long Gravel',            existingLine: 'Driveway Allowance' },
+            'Asphalt':             { row: 16, parentGroup: 'Driveway Allowance',           title: 'Driveway - Asphalt',               existingLine: 'Driveway Allowance' },
+          },
+          'tk-so-landscaping': {
+            'Basic':               { row: 17, parentGroup: '62 - Landscaping',             title: 'Landscaping - Basic',               existingLine: 'Landscaping Allowance' },
+            'Standard':            { row: 18, parentGroup: '62 - Landscaping',             title: 'Landscaping - Standard',            existingLine: 'Landscaping Allowance' },
+            'Extensive':           { row: 19, parentGroup: '62 - Landscaping',             title: 'Landscaping - Extensive',           existingLine: 'Landscaping Allowance' },
+          },
+        };
+        var selectedSiteItems = [];
+        Object.keys(TK_SITE_MAP).forEach(function(id) {
+          var el = document.getElementById(id);
+          var val = el ? el.value : '';
+          var map = TK_SITE_MAP[id];
+          if (val && map && map[val]) {
+            var entry = map[val];
+            selectedSiteItems.push({ name: entry.title, row: entry.row, parentGroup: entry.parentGroup, existingLine: entry.existingLine || null });
+          }
+        });
+
+        var siteOptions = [];
+        if (selectedSiteItems.length) {
+          var soResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: 'SITE OPTIONS', range: 'C2:C19' });
+          var cRows = soResp.data || [];
+          selectedSiteItems.forEach(function(item) {
+            var rowData = cRows[item.row - 2];
+            var unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+            siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine });
+          });
+        }
+
         // Store in session and open tab picker
-        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems });
+        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems, pendingSiteOptions: siteOptions });
         await chrome.windows.create({
           url: chrome.runtime.getURL('tabpicker.html'),
           type: 'popup', width: 560, height: 520
