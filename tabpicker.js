@@ -968,6 +968,78 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
     }
 
+    async function moveSiteItemToGroup(searchName, targetGroup) {
+      _log.push('▶ moveSiteItemToGroup: "' + searchName + '" → "' + targetGroup + '"');
+      var nsM = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+
+      var siM = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
+      if (!siM) {
+        var candsM = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
+        siM = candsM.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
+      }
+      if (siM) {
+        var contM = siM.closest('.ant-select-selector') || siM.parentElement;
+        if (contM) { contM.click(); await _delay(200); }
+        siM.focus(); await _delay(100);
+        nsM.call(siM, searchName);
+        siM.dispatchEvent(new Event('input',{bubbles:true}));
+        siM.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(900);
+        var mResult = null;
+        var mItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var mli=0; mli<mItems.length; mli++) {
+          if ((mItems[mli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { mResult = mItems[mli]; break; }
+        }
+        if (mResult) { mResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); mResult.click(); await _delay(1000); }
+        nsM.call(siM, ''); siM.dispatchEvent(new Event('input',{bubbles:true})); siM.dispatchEvent(new Event('change',{bubbles:true})); await _delay(400);
+      }
+
+      var targetRowM = null;
+      for (var tmi=0; tmi<20; tmi++) {
+        var bTagsM = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var tmi2=0; tmi2<bTagsM.length; tmi2++) {
+          if ((bTagsM[tmi2].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
+            targetRowM = bTagsM[tmi2].closest('tr.proposalBaseLineItemContainerRow'); break;
+          }
+        }
+        if (targetRowM) break;
+        await _delay(150);
+      }
+      if (!targetRowM) { _log.push('✗ moveSiteItemToGroup: row not found for ' + searchName); return; }
+      targetRowM.click(); await _delay(800);
+
+      var pgInputM = null;
+      for (var pgwaitM=0; pgwaitM<20; pgwaitM++) { pgInputM = document.getElementById('parentId'); if (pgInputM) break; await _delay(200); }
+      if (!pgInputM) { _log.push('✗ moveSiteItemToGroup: parentId field not found for ' + searchName); return; }
+      var pgWrapM = pgInputM.closest('.ant-select') || pgInputM.parentElement;
+      if (pgWrapM) { pgWrapM.click(); await _delay(400); }
+      pgInputM.focus(); await _delay(200);
+      document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
+      document.execCommand('insertText', false, targetGroup);
+      await _delay(1000);
+      var pgOptsM = document.querySelectorAll('.ant-select-item-option-content');
+      var pgOptM = null;
+      for (var poM=0; poM<pgOptsM.length; poM++) { if ((pgOptsM[poM].textContent||'').trim() === targetGroup) { pgOptM = pgOptsM[poM]; break; } }
+      if (!pgOptM) { _log.push('✗ moveSiteItemToGroup: "' + targetGroup + '" option not found for ' + searchName); return; }
+      var pgOptParentM = pgOptM.closest('.ant-select-item-option') || pgOptM.parentElement;
+      pgOptParentM.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true})); await _delay(80);
+      pgOptParentM.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
+      pgOptParentM.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+      await _delay(500);
+      _log.push('  parent group field set to "' + targetGroup + '"');
+
+      var sideElM = document.querySelector('.ant-layout-sider, aside');
+      var saveXM = sideElM ? sideElM.getBoundingClientRect().right + 5 : 10;
+      var saveYM = window.innerHeight / 2;
+      var saveTargetM = document.elementFromPoint(saveXM, saveYM) || document.body;
+      saveTargetM.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXM,clientY:saveYM})); await _delay(150);
+      saveTargetM.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXM,clientY:saveYM})); await _delay(900);
+      var dirtySaveM = null;
+      for (var dsM=0; dsM<15; dsM++) { dirtySaveM = document.querySelector('[data-testid="dirtyTrackingSave"]'); if (dirtySaveM) break; await _delay(150); }
+      if (dirtySaveM) { dirtySaveM.click(); await _delay(800); }
+      _log.push('✓ moveSiteItemToGroup: ' + searchName + ' → ' + targetGroup);
+    }
+
     var writeStartTime = performance.now();
     for (var i = 0; i < itemsList.length; i++) {
       var editOpt = editableItems[itemsList[i].name];
@@ -1001,6 +1073,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
         if (siteOptionsList[si2].existingLine) continue;
         await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
+        await moveSiteItemToGroup(siteOptionsList[si2].name, 'Site Allowances');
       }
     }
 
@@ -1010,104 +1083,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
     } else {
       _log.push('⚠ Could not detect estimate total for Realtor Fees');
     }
-
-    // Delete ALL existing placeholders (same search bar as setQty)
-    _log.push('Clearing placeholders…');
-    await (async function() {
-      try {
-        async function getDelSearchInput() {
-          var si = null;
-          for (var wi = 0; wi < 20; wi++) {
-            si = document.getElementById('rc_select_17');
-            if (!si) si = document.getElementById('rc_select_1');
-            if (!si) {
-              var cb = Array.from(document.querySelectorAll('button')).find(function(b) { return b.textContent && b.textContent.includes('Collapse all'); });
-              if (cb) { var par = cb.closest('[class*="header"], [class*="control"], div'); if (par) si = par.querySelector('input[role="combobox"].ant-select-selection-search-input'); }
-            }
-            if (!si) {
-              si = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input')).filter(function(el) {
-                var id = el.id || ''; return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
-              })[0];
-            }
-            if (si) break;
-            await _delay(100);
-          }
-          return si || null;
-        }
-
-        var deletedCount = 0;
-        var maxLoops = 1;
-
-        for (var loop = 0; loop < maxLoops; loop++) {
-          var si = await getDelSearchInput();
-          if (!si) { _log.push('⚠ Search bar not found — stopping placeholder delete'); break; }
-
-          var nsD = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var selEl = si.closest('.ant-select-selector') || si.parentElement;
-          if (selEl) { selEl.click(); await _delay(200); }
-          si.focus();
-          await _delay(100);
-          nsD.call(si, 'Place Holder');
-          si.dispatchEvent(new Event('input', { bubbles: true }));
-          si.dispatchEvent(new Event('change', { bubbles: true }));
-          await _delay(1200);
-
-          var target = null;
-          for (var ri = 0; ri < 30; ri++) {
-            var allResults = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-            for (var rj = 0; rj < allResults.length; rj++) {
-              if ((allResults[rj].innerText || '').trim().toLowerCase() === 'place holder') { target = allResults[rj]; break; }
-            }
-            if (target) break;
-            await _delay(100);
-          }
-          if (!target) { document.body.click(); await _delay(200); break; }
-
-          // Click the row to open the edit popup
-          target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          target.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
-          target.click();
-          await _delay(1200);
-
-          // Click the ... button inside the edit popup
-          var moreBtn = null;
-          for (var mb = 0; mb < 20; mb++) {
-            moreBtn = document.querySelector('[data-testid="estimateLineItemDetailsActionsRollup"]');
-            if (moreBtn) break;
-            await _delay(150);
-          }
-          if (!moreBtn) { _log.push('⚠ More button not found on loop ' + (loop + 1) + ' — stopping'); break; }
-          moreBtn.click();
-          await _delay(500);
-
-          // Click Delete in the rollup menu
-          var delBtn = null;
-          for (var db = 0; db < 15; db++) {
-            delBtn = document.querySelector('#estimateLineItemDetailsActions-menu [data-testid="delete"]');
-            if (delBtn) break;
-            await _delay(100);
-          }
-          if (!delBtn) { document.body.click(); _log.push('⚠ Delete option not found on loop ' + (loop + 1) + ' — stopping'); break; }
-          delBtn.click();
-          await _delay(600);
-
-          // Click confirm Delete button
-          var confirmBtn = null;
-          for (var cb2 = 0; cb2 < 15; cb2++) {
-            confirmBtn = document.querySelector('[data-testid="confirmPrompt"]');
-            if (confirmBtn) break;
-            await _delay(100);
-          }
-          if (!confirmBtn) { _log.push('⚠ Confirm Delete not found on loop ' + (loop + 1) + ' — stopping'); break; }
-          confirmBtn.click();
-          await _delay(3000);
-          deletedCount++;
-        }
-
-        if (deletedCount > 0) _log.push('✓ Deleted ' + deletedCount + ' placeholder(s)');
-        else _log.push('⚠ No placeholders found — continuing');
-      } catch(e) { _log.push('⚠ Placeholder delete error: ' + e.message); }
-    })();
 
     var totalWriteTime = performance.now() - writeStartTime;
     var totalSeconds = totalWriteTime / 1000;
