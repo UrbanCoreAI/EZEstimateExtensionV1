@@ -1096,6 +1096,16 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     // Step 1: Click buildProposal button
     log('Opening proposal builder…');
     setStatus('Opening proposal…');
+    // Snapshot resource count BEFORE clicking — the tab picker lets you pick any
+    // already-open tab, which may carry resource-timing entries from a DIFFERENT
+    // job's proposal viewed earlier in the session. Scanning from the start would
+    // grab that stale jobId. Only scan entries added after this click (see
+    // SITE-ALLOWANCES-BUG-EXPLANATION.md / Client Preview FormatNotSavingFixes.md).
+    var _preClickCount = await chrome.scripting.executeScript({
+      target: { tabId: tabId }, world: 'MAIN',
+      func: function () { return performance.getEntriesByType('resource').length; }
+    });
+    var _preCount = (_preClickCount && _preClickCount[0] && _preClickCount[0].result) || 0;
     var _buildBtnRes = await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
       func: async function() {
@@ -1108,7 +1118,28 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     if (_buildBtnStatus && !_buildBtnStatus.found) {
       log('⚠ "Build Proposal" button not found on this tab (url: ' + _buildBtnStatus.url + ') — make sure the picked tab is on the estimate page for this job');
     }
-    await delay(2500);
+
+    // Poll for the NEW draft request (most-recent-first) so we capture THIS
+    // job's jobId, not a stale one from an earlier proposal viewed in this tab.
+    var _proposalJobId = null;
+    for (var _pw = 0; _pw < 17; _pw++) {
+      await delay(150);
+      var _jobIdRes = await chrome.scripting.executeScript({
+        target: { tabId: tabId }, world: 'MAIN',
+        func: function (startIdx) {
+          var resources = performance.getEntriesByType('resource');
+          for (var ri = resources.length - 1; ri >= startIdx; ri--) {
+            var m = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (m) return m[1];
+          }
+          return null;
+        },
+        args: [_preCount]
+      });
+      _proposalJobId = _jobIdRes && _jobIdRes[0] && _jobIdRes[0].result;
+      if (_proposalJobId) break;
+    }
+    log('Proposal jobId: ' + (_proposalJobId || 'not found — will fall back to scanning all resources'));
 
     // Step 1.5: Fill editor1 (intro) and editor2 (closing) via CKEditor API
     if (_grandTotal > 0) {
@@ -1223,7 +1254,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
       ].join('');
       var _editorResult = await chrome.scripting.executeScript({
         target: { tabId: tabId }, world: 'MAIN',
-        func: async function(introHtml, closingHtml) {
+        func: async function(introHtml, closingHtml, knownJobId) {
           function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
           var titleInput = document.querySelector('#title[data-testid="title"]');
           if (titleInput) {
@@ -1249,11 +1280,13 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
           editorB.setData(closingHtml);
           await delay(300);
 
-          var jobId = null;
-          var resources = performance.getEntriesByType('resource');
-          for (var ri = 0; ri < resources.length; ri++) {
-            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-            if (rm) { jobId = rm[1]; break; }
+          var jobId = knownJobId || null;
+          if (!jobId) {
+            var resources = performance.getEntriesByType('resource');
+            for (var ri = resources.length - 1; ri >= 0; ri--) {
+              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+              if (rm) { jobId = rm[1]; break; }
+            }
           }
 
           console.log('[Duke] jobId found:', jobId);
@@ -1344,18 +1377,20 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             if (saveBtn2) { saveBtn2.click(); await delay(3000); }
           }
         },
-        args: [_introHtml, _closingHtml]
+        args: [_introHtml, _closingHtml, _proposalJobId]
       });
       var _saveResult = _editorResult && _editorResult[0] && _editorResult[0].result;
       log('Proposal save result: ' + JSON.stringify(_saveResult));
       await chrome.scripting.executeScript({
         target: { tabId: tabId }, world: 'MAIN',
-        func: async function() {
-          var resources = performance.getEntriesByType('resource');
-          var jobId = null;
-          for (var ri = 0; ri < resources.length; ri++) {
-            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-            if (rm) { jobId = rm[1]; break; }
+        func: async function(knownJobId) {
+          var jobId = knownJobId || null;
+          if (!jobId) {
+            var resources = performance.getEntriesByType('resource');
+            for (var ri = resources.length - 1; ri >= 0; ri--) {
+              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+              if (rm) { jobId = rm[1]; break; }
+            }
           }
           if (!jobId) return;
           var xhr = new XMLHttpRequest();
@@ -1370,7 +1405,8 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
               console.log('[Duke] Verify GET introductionText starts with:', intro.slice(0, 80));
             } catch(e) {}
           }
-        }
+        },
+        args: [_proposalJobId]
       });
       await delay(2000);
       await chrome.scripting.executeScript({
