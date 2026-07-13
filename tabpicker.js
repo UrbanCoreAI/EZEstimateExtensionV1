@@ -247,6 +247,21 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    function findWorksheetSearchBar() {
+      var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+        return (b.textContent || '').includes('Collapse all');
+      });
+      if (collapseBtn) {
+        var el = collapseBtn;
+        while (el && el !== document.body) {
+          var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
+          if (inp) return inp;
+          el = el.parentElement;
+        }
+      }
+      return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
+    }
+
     function waitForModalClose(maxWaitMs) {
       maxWaitMs = maxWaitMs || 2000;
       return new Promise(function (resolve) {
@@ -626,11 +641,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       var ns = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
       // Step 1: Search "Site Allowances" to scroll table to that group — mirrors createLineItem exactly
-      var si = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-      if (!si) {
-        var cands = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-        si = cands.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-      }
+      var si = findWorksheetSearchBar();
       if (si) {
         var cont = si.closest('.ant-select-selector') || si.parentElement;
         if (cont) { cont.click(); await _delay(200); }
@@ -658,8 +669,10 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
         for (var siri=0; siri<siRows.length; siri++) {
           var siTitleEl = siRows[siri].querySelector('.proposalFormatGroupCellTitle');
           if (siTitleEl && (siTitleEl.innerText||'').trim().toLowerCase() === 'site allowances') {
-            var siCandidate = siRows[siri].querySelector('button.AddItemsDropdown') ||
-              (siRows[siri].parentElement && siRows[siri].parentElement.querySelector('button.AddItemsDropdown'));
+            siRows[siri].dispatchEvent(new MouseEvent('mouseenter', {bubbles:true}));
+            siRows[siri].dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+            // Only look WITHIN this exact row — no parentElement fallback (that finds wrong group's button)
+            var siCandidate = siRows[siri].querySelector('button.AddItemsDropdown');
             if (siCandidate) { plusBtn = siCandidate; break; }
           }
         }
@@ -678,9 +691,9 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       await _delay(400);
       var itemOpt = null;
       for (var iat=0; iat<15; iat++) {
-        var opts = document.querySelectorAll('.ant-dropdown-menu-item, [class*="DropdownMenuItem"], li[role="menuitem"]');
+        var opts = document.querySelectorAll('.ant-dropdown-menu-title-content');
         for (var oi=0; oi<opts.length; oi++) {
-          if ((opts[oi].textContent||'').trim().toLowerCase() === 'item') { itemOpt = opts[oi]; break; }
+          if ((opts[oi].textContent||'').trim() === 'Item') { itemOpt = opts[oi]; break; }
         }
         if (itemOpt) break;
         await _delay(100);
