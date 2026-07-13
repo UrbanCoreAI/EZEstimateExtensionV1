@@ -3,6 +3,7 @@
   "name": "Duke Estimating - BuilderTrend Sync",
   "version": "1.0.1",
   "description": "Sync BuilderTrend takeoff measurements to your Google Sheets estimating spreadsheet",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4i2QVYaknZwSUiCurnASYmeeKH4tIbVAEhwTnws/aYVVI4thX7S7j064C40hBgjfC4U9kxdVmIHbnbvSYr1js++6OOpiRPEoe5Ky/SJYSY2dh06QBVhP19TFZ6x8q2kB1blZTWMvGyA/3NTApxX2jym+YiAx0Az82rwbf2M1uLvMtZOjuyPzz7zfDAcOF7XsQ/FEVsO0QknVkPbnMQjEVZtV9IvRDjGINf56VqAQQM/0Nct1qxBVIoKYv2p1qw7EIpbQem1oxchqL7b8pXyzJnxlZHuHP8w2jYVMIFVu4fkUQJOQbu8Msu6FijslFXNqtWOYr1yjR7JgYZyCFIqbEQIDAQAB",
   "permissions": ["identity", "storage", "scripting", "tabs", "tabCapture", "windows", "offscreen", "webNavigation"],
   "host_permissions": [
     "<all_urls>",

@@ -1,3 +1,4 @@
 node_modules/
 lib/
 *.zip
+extension_key.pem
