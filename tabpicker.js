@@ -605,11 +605,11 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
 
       // ── Step 6: Unit cost ─────────────────────────────────────────────────
       // OuterHTML shows type="text", id & data-testid = keyBase + ".unitCost", value="0.0000"
-      var ucInput = document.querySelector('[data-testid="' + keyBase + '.unitCost"]')
-                 || document.querySelector('[id="' + keyBase + '.unitCost"]');
+      var ucInput = document.querySelector('input[data-testid="' + keyBase + '.unitCost"]')
+                 || document.querySelector('input[id="' + keyBase + '.unitCost"]');
       if (ucInput) {
         ucInput.focus(); await _delay(150);
-        ucInput.select();
+        if (typeof ucInput.select === 'function') ucInput.select();
         // clear existing "0.0000" then type the real value
         ns.call(ucInput, '');
         ucInput.dispatchEvent(new Event('input',{bubbles:true}));
@@ -651,14 +651,16 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
         si.dispatchEvent(new Event('change',{bubbles:true}));
         await _delay(900);
         var siResult = null;
-        var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        var liItems = document.querySelectorAll('.LineItemResultTitle');
         for (var li=0; li<liItems.length; li++) {
-          if ((liItems[li].innerText||'').trim().toLowerCase() === 'site allowances') { siResult = liItems[li]; break; }
+          if ((liItems[li].textContent||'').trim().toLowerCase() === 'site allowances') { siResult = liItems[li]; break; }
         }
         if (siResult) {
           siResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
           siResult.click();
           await _delay(700);
+        } else {
+          _log.push('⚠ createSiteItem: "Site Allowances" search result not found');
         }
       }
 
