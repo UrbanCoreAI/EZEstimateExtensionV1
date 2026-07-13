@@ -1979,71 +1979,6 @@ async function writeToEstimate() {
           _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
         }
 
-        async function moveSiteItemToGroup(searchName, targetGroup) {
-          _log.push('▶ moveSiteItemToGroup: "' + searchName + '" → "' + targetGroup + '"');
-          var nsM = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var siM = findWorksheetSearchBar();
-          _log.push('  search bar: ' + (siM ? 'found id=' + siM.id : 'NOT FOUND'));
-          if (siM) {
-            var contM = siM.closest('.ant-select-selector') || siM.parentElement;
-            if (contM) { contM.click(); await _delay(200); }
-            siM.focus(); await _delay(100);
-            nsM.call(siM, searchName);
-            siM.dispatchEvent(new Event('input',{bubbles:true}));
-            siM.dispatchEvent(new Event('change',{bubbles:true}));
-            await _delay(900);
-            var mResult = null;
-            var mItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-            for (var mli=0; mli<mItems.length; mli++) {
-              if ((mItems[mli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { mResult = mItems[mli]; break; }
-            }
-            if (mResult) { mResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); mResult.click(); await _delay(1000); }
-            nsM.call(siM, ''); siM.dispatchEvent(new Event('input',{bubbles:true})); siM.dispatchEvent(new Event('change',{bubbles:true})); await _delay(400);
-          }
-          var targetRowM = null;
-          for (var tmi=0; tmi<20; tmi++) {
-            var bTagsM = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
-            for (var tmi2=0; tmi2<bTagsM.length; tmi2++) {
-              if ((bTagsM[tmi2].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-                targetRowM = bTagsM[tmi2].closest('tr.proposalBaseLineItemContainerRow'); break;
-              }
-            }
-            if (targetRowM) break;
-            await _delay(150);
-          }
-          if (!targetRowM) { _log.push('✗ moveSiteItemToGroup: row not found for ' + searchName); return; }
-          targetRowM.click(); await _delay(800);
-          var pgInputM = null;
-          for (var pgwaitM=0; pgwaitM<20; pgwaitM++) { pgInputM = document.getElementById('parentId'); if (pgInputM) break; await _delay(200); }
-          if (!pgInputM) { _log.push('✗ moveSiteItemToGroup: parentId field not found for ' + searchName); return; }
-          var pgWrapM = pgInputM.closest('.ant-select') || pgInputM.parentElement;
-          if (pgWrapM) { pgWrapM.click(); await _delay(400); }
-          pgInputM.focus(); await _delay(200);
-          document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
-          document.execCommand('insertText', false, targetGroup);
-          await _delay(1000);
-          var pgOptsM = document.querySelectorAll('.ant-select-item-option-content');
-          var pgOptM = null;
-          for (var poM=0; poM<pgOptsM.length; poM++) { if ((pgOptsM[poM].textContent||'').trim() === targetGroup) { pgOptM = pgOptsM[poM]; break; } }
-          if (!pgOptM) { _log.push('✗ moveSiteItemToGroup: "' + targetGroup + '" option not found for ' + searchName); return; }
-          var pgOptParentM = pgOptM.closest('.ant-select-item-option') || pgOptM.parentElement;
-          pgOptParentM.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true})); await _delay(80);
-          pgOptParentM.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-          pgOptParentM.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-          await _delay(500);
-          _log.push('  parent group field set to "' + targetGroup + '"');
-          var sideElM = document.querySelector('.ant-layout-sider, aside');
-          var saveXM = sideElM ? sideElM.getBoundingClientRect().right + 5 : 10;
-          var saveYM = window.innerHeight / 2;
-          var saveTargetM = document.elementFromPoint(saveXM, saveYM) || document.body;
-          saveTargetM.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXM,clientY:saveYM})); await _delay(150);
-          saveTargetM.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXM,clientY:saveYM})); await _delay(900);
-          var dirtySaveM = null;
-          for (var dsM=0; dsM<15; dsM++) { dirtySaveM = document.querySelector('[data-testid="dirtyTrackingSave"]'); if (dirtySaveM) break; await _delay(150); }
-          if (dirtySaveM) { dirtySaveM.click(); await _delay(800); }
-          _log.push('✓ moveSiteItemToGroup: ' + searchName + ' → ' + targetGroup);
-        }
-
         var editableItems = {};
         if (siteOptionsList) {
           for (var ei = 0; ei < siteOptionsList.length; ei++) {
@@ -2096,7 +2031,6 @@ async function writeToEstimate() {
           for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
             if (siteOptionsList[si2].existingLine) continue;
             await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
-            await moveSiteItemToGroup(siteOptionsList[si2].name, 'Site Allowances');
           }
         }
 
