@@ -969,6 +969,15 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
     }
 
     var writeStartTime = performance.now();
+
+    if (customItemsList && customItemsList.length) {
+      _log.push('');
+      _log.push('── Custom Selection Allowances ──');
+      for (var ci = 0; ci < customItemsList.length; ci++) {
+        await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost);
+      }
+    }
+
     for (var i = 0; i < itemsList.length; i++) {
       var editOpt = editableItems[itemsList[i].name];
       if (editOpt) {
@@ -987,12 +996,12 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
       if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
     }
-    if (customItemsList && customItemsList.length) {
-      _log.push('');
-      _log.push('── Custom Selection Allowances ──');
-      for (var ci = 0; ci < customItemsList.length; ci++) {
-        await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost);
-      }
+
+    if (totalVal > 0) {
+      _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
+      await setQty('Realtor Fees', totalVal, true);
+    } else {
+      _log.push('⚠ Could not detect estimate total for Realtor Fees');
     }
 
     if (siteOptionsList && siteOptionsList.length) {
@@ -1002,13 +1011,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
         if (siteOptionsList[si2].existingLine) continue;
         await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
       }
-    }
-
-    if (totalVal > 0) {
-      _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
-      await setQty('Realtor Fees', totalVal, true);
-    } else {
-      _log.push('⚠ Could not detect estimate total for Realtor Fees');
     }
 
     var totalWriteTime = performance.now() - writeStartTime;
