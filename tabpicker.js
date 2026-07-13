@@ -1712,6 +1712,110 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     });
     await delay(800);
 
+    // Final locking PUT with retry — display settings and group collapses trigger BT's
+    // debounced React auto-save which overwrites our PUT on its own timer (1-3s later).
+    // We wait 4s to let that auto-save fire first, then PUT and verify in a retry loop
+    // until the text stabilises for 2 consecutive GETs.
+    await delay(4000);
+    if (grandTotal > 0) {
+      log('Final text lock after display config…');
+      var finalLockResult = await chrome.scripting.executeScript({
+        target: { tabId: tab.id }, world: 'MAIN',
+        func: async function (iHtml, cHtml, knownJobId) {
+          var jobId = knownJobId || null;
+          if (!jobId) {
+            var resources = performance.getEntriesByType('resource');
+            for (var ri = resources.length - 1; ri >= 0; ri--) {
+              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+              if (rm) { jobId = rm[1]; break; }
+            }
+          }
+          if (!jobId) return { lockStatus: null, verifyIntroLen: null };
+          var draft = await new Promise(function (resolve) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
+            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+            xhr.setRequestHeader('portaltype', '1');
+            xhr.onload = function () { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); } };
+            xhr.onerror = function () { resolve(null); };
+            xhr.send();
+          });
+          if (!draft) return { lockStatus: null, verifyIntroLen: null };
+          var putBody = {};
+          Object.keys(draft).forEach(function (k) {
+            if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) { Object.assign(putBody, draft[k]); }
+          });
+          if (!('categories' in putBody) && putBody.formatItems) { putBody.categories = putBody.formatItems; }
+          if (!('formatOptions' in putBody)) {
+            var dOpts = putBody.displayOptions || {};
+            var pConf = putBody.proposalDisplayConfig || {};
+            putBody.formatOptions = {
+              body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
+              includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
+              showOwnerContactInfo: putBody.showOwnerContactInfo || false,
+              showPrintoutInfo: putBody.showPrintoutInfo || false,
+              proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
+              hasSingleSelectCostTypes: pConf.hasSingleSelectCostTypes || false
+            };
+          }
+          if (Array.isArray(putBody.categories)) {
+            putBody.categories.forEach(function (cat) {
+              if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; }
+            });
+          }
+          putBody.requireSignatures = false;
+          putBody.requiredSignatureUsers = [];
+          if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) {
+            putBody.columnsToDisplay = putBody.columnsToDisplay.value;
+          }
+          putBody.introductionText = iHtml;
+          putBody.closingText = cHtml;
+
+          function doGetIntroLen(jid) {
+            var vx = new XMLHttpRequest();
+            vx.open('GET', '/apix/v2/Proposals/draft?jobId=' + jid, false);
+            vx.setRequestHeader('accept', 'application/json, text/plain, */*');
+            vx.setRequestHeader('portaltype', '1');
+            vx.send();
+            if (vx.status !== 200) return null;
+            try { var d = JSON.parse(vx.responseText); return (d.introductionText || (d.proposal && d.proposal.introductionText) || '').length; } catch(e) { return null; }
+          }
+          function doPut(body, jid) {
+            return new Promise(function(resolve) {
+              var px = new XMLHttpRequest();
+              px.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jid, true);
+              px.setRequestHeader('content-type', 'application/merge-patch+json');
+              px.setRequestHeader('accept', 'application/json, text/plain, */*');
+              px.setRequestHeader('portaltype', '1');
+              px.onload = function() { resolve(px.status); };
+              px.onerror = function() { resolve(0); };
+              px.send(JSON.stringify(body));
+            });
+          }
+
+          // Retry loop: PUT → verify immediately → wait 3s → verify again.
+          // If BT's debounced auto-save fires and changes the text, PUT again.
+          // Repeat up to 3 times so our write is always last.
+          var lockStatus = null;
+          var verifyIntroLen = null;
+          var expectedLen = iHtml.length;
+          for (var retryIdx = 0; retryIdx < 3; retryIdx++) {
+            lockStatus = await doPut(putBody, jobId);
+            var lenAfterPut = doGetIntroLen(jobId);
+            await new Promise(function(r){ setTimeout(r, 3000); });
+            var lenAfterWait = doGetIntroLen(jobId);
+            verifyIntroLen = lenAfterWait;
+            if (lenAfterWait === lenAfterPut) break; // stable — no auto-save overwrote us
+            // BT auto-save changed the text — loop and PUT again
+          }
+          return { lockStatus: lockStatus, verifyIntroLen: verifyIntroLen };
+        },
+        args: [introHtml, closingHtml, proposalJobId]
+      });
+      var flr = finalLockResult && finalLockResult[0] && finalLockResult[0].result;
+      log('Final lock result: status=' + (flr && flr.lockStatus) + ' verifyIntroLen=' + (flr && flr.verifyIntroLen));
+    }
+
     log('✓ Client preview setup complete');
     setStatus('Opening print dialog…');
 

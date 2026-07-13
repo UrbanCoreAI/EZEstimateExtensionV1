@@ -1422,6 +1422,24 @@ async function writeToEstimate() {
           input.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        // Finds the worksheet search bar by walking up from the "Collapse all" button —
+        // never relies on rc_select_* IDs which change whenever BT re-renders form elements.
+        function findWorksheetSearchBar() {
+          var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+            return (b.textContent || '').includes('Collapse all');
+          });
+          if (collapseBtn) {
+            var el = collapseBtn;
+            while (el && el !== document.body) {
+              var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
+              if (inp) return inp;
+              el = el.parentElement;
+            }
+          }
+          // Fallback: legacy IDs
+          return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
+        }
+
         async function setQty(name, qty, isUnitCost) {
           var needle = name.toLowerCase();
           var words = needle.split(/\s+/).filter(Boolean);
@@ -1452,37 +1470,9 @@ async function writeToEstimate() {
           }
 
           // 1. Focus the correct Ant Design Select search input (line items search)
-          // Retry up to 20x (2s total) in case the page hasn't rendered it yet
           var si = null;
           for (var wi = 0; wi < 20; wi++) {
-            // Primary: try rc_select_17 (current correct ID next to "Collapse all")
-            si = document.getElementById('rc_select_17');
-
-            // Secondary: try legacy ID
-            if (!si) si = document.getElementById('rc_select_1');
-
-            // Tertiary: find by context (next to "Collapse all" button)
-            if (!si) {
-              var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(btn) {
-                return btn.textContent && btn.textContent.includes('Collapse all');
-              });
-              if (collapseBtn) {
-                var parent = collapseBtn.closest('[class*="header"], [class*="control"], div');
-                if (parent) si = parent.querySelector('input[role="combobox"].ant-select-selection-search-input');
-              }
-            }
-
-            // Fallback: find by excluding rc_select_0 and other non-line-item searches
-            if (!si) {
-              var candidates = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-              // Filter: skip rc_select_0 (wrong one), savedFilterDropdown, and numbered IDs
-              candidates = candidates.filter(function(el) {
-                var id = el.id || '';
-                return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
-              });
-              si = candidates[0];
-            }
-
+            si = findWorksheetSearchBar();
             if (si) break;
             await _delay(100);
           }
@@ -1649,11 +1639,7 @@ async function writeToEstimate() {
 
         async function createLineItem(title, unitCost) {
           var nsL = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var siL = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-          if (!siL) {
-            var candsL = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-            siL = candsL.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-          }
+          var siL = findWorksheetSearchBar();
           if (siL) {
             var contL = siL.closest('.ant-select-selector') || siL.parentElement;
             if (contL) { contL.click(); await _delay(200); }
@@ -1768,12 +1754,10 @@ async function writeToEstimate() {
         }
 
         async function createSiteItem(title, parentGroup, unitCost) {
+          _log.push('▶ createSiteItem start: "' + title + '" parentGroup="' + parentGroup + '"');
           var ns2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var si = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-          if (!si) {
-            var cands2 = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-            si = cands2.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-          }
+          var si = findWorksheetSearchBar();
+          _log.push('  search bar: ' + (si ? 'found id=' + si.id : 'NOT FOUND'));
           if (si) {
             var cont2 = si.closest('.ant-select-selector') || si.parentElement;
             if (cont2) { cont2.click(); await _delay(200); }
@@ -1784,28 +1768,41 @@ async function writeToEstimate() {
             await _delay(900);
             var siResult = null;
             var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+            _log.push('  search results found: ' + liItems.length + ' — texts: [' + Array.from(liItems).slice(0,5).map(function(el){ return '"' + (el.innerText||'').trim() + '"'; }).join(', ') + ']');
             for (var li=0; li<liItems.length; li++) {
               if ((liItems[li].innerText||'').trim().toLowerCase() === 'site allowances') { siResult = liItems[li]; break; }
             }
+            _log.push('  "site allowances" result: ' + (siResult ? 'FOUND — clicking' : 'NOT FOUND'));
             if (siResult) { siResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); siResult.click(); await _delay(700); }
           }
           var plusBtn = null;
+          var groupRowTitles = [];
           for (var siat=0; siat<20; siat++) {
             var siRows = document.querySelectorAll('.WorksheetGroupCellActions');
+            groupRowTitles = Array.from(siRows).map(function(r){ var t=r.querySelector('.proposalFormatGroupCellTitle'); return t ? (t.innerText||'').trim() : '(no title)'; });
             for (var siri=0; siri<siRows.length; siri++) {
               var siTitleEl = siRows[siri].querySelector('.proposalFormatGroupCellTitle');
               if (siTitleEl && (siTitleEl.innerText||'').trim().toLowerCase() === 'site allowances') {
-                var siCandidate = siRows[siri].querySelector('button.AddItemsDropdown') ||
-                  (siRows[siri].parentElement && siRows[siri].parentElement.querySelector('button.AddItemsDropdown'));
+                // Trigger hover so BT renders the + button (it's only visible on mouseenter)
+                siRows[siri].dispatchEvent(new MouseEvent('mouseenter', {bubbles:true}));
+                siRows[siri].dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+                await _delay(200);
+                // Only look WITHIN this exact row — no parentElement fallback (that finds wrong group's button)
+                var siCandidate = siRows[siri].querySelector('button.AddItemsDropdown');
+                _log.push('  Site Allowances row found, + button: ' + (siCandidate ? 'FOUND' : 'NOT FOUND (hover triggered)'));
                 if (siCandidate) { plusBtn = siCandidate; break; }
               }
             }
             if (plusBtn) break;
             await _delay(150);
           }
+          _log.push('  group rows in DOM: [' + groupRowTitles.join(', ') + ']');
+          _log.push('  plusBtn: ' + (plusBtn ? 'FOUND' : 'NOT FOUND'));
           if (!plusBtn) { _log.push('✗ createSiteItem: + button not found for Site Allowances'); return; }
           plusBtn.scrollIntoView({ behavior:'instant', block:'center' });
           await _delay(300);
+          var plusBtnGroupTitle = (function() { var r = plusBtn.closest('.WorksheetGroupCellActions') || (plusBtn.parentElement && plusBtn.parentElement.closest('.WorksheetGroupCellActions')); if (!r) return '(unknown)'; var t = r.querySelector('.proposalFormatGroupCellTitle'); return t ? (t.innerText||'').trim() : '(no title)'; })();
+          _log.push('  clicking + under group: "' + plusBtnGroupTitle + '"');
           var siExistingIds = new Set(Array.from(document.querySelectorAll('[data-testid*="itemTitle"]')).map(function(e){ return e.id; }));
           plusBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
           plusBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
@@ -1875,18 +1872,18 @@ async function writeToEstimate() {
             if (pgWrap) { pgWrap.click(); await _delay(400); }
             pgInput.focus(); await _delay(200);
             document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
-            document.execCommand('insertText', false, parentGroup);
+            document.execCommand('insertText', false, 'Site Allowances');
             await _delay(1000);
             var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
             var pgOpt = null;
-            for (var po=0; po<pgOpts.length; po++) { if ((pgOpts[po].textContent||'').trim() === parentGroup) { pgOpt = pgOpts[po]; break; } }
+            for (var po=0; po<pgOpts.length; po++) { if ((pgOpts[po].textContent||'').trim() === 'Site Allowances') { pgOpt = pgOpts[po]; break; } }
             if (pgOpt) {
               var pgOptParent = pgOpt.closest('.ant-select-item-option') || pgOpt.parentElement;
               pgOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true})); await _delay(80);
               pgOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
               pgOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-              await _delay(500); _log.push('✓ createSiteItem: parent group set to ' + parentGroup);
-            } else { _log.push('⚠ createSiteItem: parent group "' + parentGroup + '" not found — continuing'); }
+              await _delay(500); _log.push('✓ createSiteItem: parent group set to Site Allowances');
+            } else { _log.push('⚠ createSiteItem: parent group "Site Allowances" not found — continuing'); }
           } else { _log.push('⚠ createSiteItem: parentId input not found'); }
           if (unitCost && parseFloat(unitCost) > 0) {
             var ucInput = document.querySelector('[data-testid="' + keyBase + '.unitCost"]') || document.querySelector('[id="' + keyBase + '.unitCost"]');
@@ -1908,11 +1905,7 @@ async function writeToEstimate() {
 
         async function editExistingItem(searchName, newTitle, unitCost) {
           var nsE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var siE = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-          if (!siE) {
-            var candsE = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-            siE = candsE.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-          }
+          var siE = findWorksheetSearchBar();
           if (siE) {
             var contE = siE.closest('.ant-select-selector') || siE.parentElement;
             if (contE) { contE.click(); await _delay(200); }
@@ -1995,6 +1988,14 @@ async function writeToEstimate() {
           }
         }
 
+        if (customItemsList && customItemsList.length) {
+          _log.push('');
+          _log.push('── Custom Selection Allowances ──');
+          for (var cli = 0; cli < customItemsList.length; cli++) {
+            await createLineItem(customItemsList[cli].name, customItemsList[cli].unitCost);
+          }
+        }
+
         var writeStartTime = performance.now();
         for (var i = 0; i < itemsList.length; i++) {
           if (window.__dukeWriteStop) { _log.push('⏹ Stopped'); break; }
@@ -2023,90 +2024,6 @@ async function writeToEstimate() {
           _log.push('⚠ Could not detect estimate total for Realtor Fees');
         }
 
-        // Delete ALL existing placeholders (same search bar as setQty)
-        _log.push('Clearing placeholders…');
-        await (async function() {
-          try {
-            async function getDelSearchInput() {
-              var si = null;
-              for (var wi = 0; wi < 20; wi++) {
-                si = document.getElementById('rc_select_17');
-                if (!si) si = document.getElementById('rc_select_1');
-                if (!si) {
-                  var cb = Array.from(document.querySelectorAll('button')).find(function(b) { return b.textContent && b.textContent.includes('Collapse all'); });
-                  if (cb) { var par = cb.closest('[class*="header"], [class*="control"], div'); if (par) si = par.querySelector('input[role="combobox"].ant-select-selection-search-input'); }
-                }
-                if (!si) {
-                  si = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input')).filter(function(el) {
-                    var id = el.id || ''; return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
-                  })[0];
-                }
-                if (si) break;
-                await _delay(100);
-              }
-              return si || null;
-            }
-
-            var deletedCount = 0;
-            var maxLoops = 1;
-
-            for (var loop = 0; loop < maxLoops; loop++) {
-              var si = await getDelSearchInput();
-              if (!si) { _log.push('⚠ Search bar not found — stopping placeholder delete'); break; }
-
-              var selEl = si.closest('.ant-select-selector') || si.parentElement;
-              if (selEl) { selEl.click(); await _delay(200); }
-              si.focus();
-              await _delay(100);
-              reactSet(si, '');
-              await _delay(100);
-              reactSet(si, 'place');
-              await _delay(1200);
-
-              var target = null;
-              for (var ri = 0; ri < 30; ri++) {
-                target = document.querySelector('.LineItemResult.LineItem');
-                if (target) break;
-                await _delay(100);
-              }
-              if (!target) { document.body.click(); await _delay(200); break; }
-
-              target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-              target.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
-              target.click();
-              await _delay(1000);
-
-              // Pick the BTIconActions button closest to viewport center (BT scrolls the target row there)
-              var vcY = window.innerHeight / 2;
-              var actBtn = null;
-              var actionIcons = Array.from(document.querySelectorAll('[data-icon-name="BTIconActions"]'));
-              var closestDist = Infinity;
-              for (var ai = 0; ai < actionIcons.length; ai++) {
-                var rect = actionIcons[ai].getBoundingClientRect();
-                var dist = Math.abs((rect.top + rect.height / 2) - vcY);
-                if (dist < closestDist) { closestDist = dist; actBtn = actionIcons[ai].closest('button, [role="button"]') || actionIcons[ai].parentElement; }
-              }
-              if (!actBtn) { _log.push('⚠ Actions button not found on loop ' + (loop + 1) + ' — stopping'); break; }
-
-              actBtn.click();
-              await _delay(400);
-
-              var delOption = Array.from(document.querySelectorAll('.ant-dropdown-menu-title-content')).find(function(el) { return el.textContent.trim() === 'Delete'; });
-              if (!delOption) { document.body.click(); _log.push('⚠ Delete option not found on loop ' + (loop + 1) + ' — stopping'); break; }
-              delOption.click();
-              await _delay(500);
-
-              var confirmBtn = Array.from(document.querySelectorAll('button span')).find(function(el) { return el.textContent.trim() === 'Delete'; });
-              if (!confirmBtn) { _log.push('⚠ Confirm Delete not found on loop ' + (loop + 1) + ' — stopping'); break; }
-              confirmBtn.closest('button').click();
-              await _delay(3000);
-              deletedCount++;
-            }
-
-            if (deletedCount > 0) _log.push('✓ Deleted ' + deletedCount + ' placeholder(s)');
-            else _log.push('⚠ No placeholders found — continuing');
-          } catch(e) { _log.push('⚠ Placeholder delete error: ' + e.message); }
-        })();
 
         if (siteOptionsList && siteOptionsList.length) {
           _log.push('');
@@ -2114,14 +2031,6 @@ async function writeToEstimate() {
           for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
             if (siteOptionsList[si2].existingLine) continue;
             await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
-          }
-        }
-
-        if (customItemsList && customItemsList.length) {
-          _log.push('');
-          _log.push('── Custom Selection Allowances ──');
-          for (var cli = 0; cli < customItemsList.length; cli++) {
-            await createLineItem(customItemsList[cli].name, customItemsList[cli].unitCost);
           }
         }
 
