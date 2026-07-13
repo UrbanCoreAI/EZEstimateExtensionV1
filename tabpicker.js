@@ -1073,11 +1073,15 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     await chrome.windows.update(tab.windowId, { focused: true });
     await delay(400);
 
-    // Step 0: Read grand total
+    // ── Ported directly from popup.js runClientPreviewFlow (the static
+    // extension dropdown's "Start Prelim - Budget Client Preview" button) ──
+    var tabId = tab.id;
+
+    // Step 0: Read grand total from estimate footer (before navigating away)
     log('Reading estimate grand total…');
-    var totalRes = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: function () {
+    var _totalRes = await chrome.scripting.executeScript({
+      target: { tabId: tabId }, world: 'MAIN',
+      func: function() {
         var span = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
         if (!span) return 0;
         var txt = (span.innerText || '').trim();
@@ -1085,104 +1089,33 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         return m ? parseFloat(m[1].replace(/,/g, '')) : 0;
       }
     });
-    var grandTotal = (totalRes && totalRes[0] && totalRes[0].result) || 0;
-    if (grandTotal > 0) log('Grand total: $' + grandTotal.toLocaleString('en-US'));
+    var _grandTotal = (_totalRes && _totalRes[0] && _totalRes[0].result) || 0;
+    if (_grandTotal > 0) log('Grand total: $' + _grandTotal.toLocaleString('en-US'));
     else log('Warning: grand total not found — budget range will be skipped');
 
-    // Step 0.5: Read group flags from React state while still on estimate tab
-    log('Reading group info from estimate…');
-    var flagsRes = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: function () {
-        var row = document.querySelector('tr.categoryRow');
-        if (!row) return { hasCsa: false, hasLender: false };
-        var fiberKey = Object.keys(row).find(function (k) { return k.startsWith('__reactFiber'); });
-        if (!fiberKey) return { hasCsa: false, hasLender: false };
-
-        var node = row[fiberKey];
-        var groups = null;
-        var depth = 0;
-        while (node && depth < 200) {
-          if (node.memoizedProps && node.memoizedProps.formatDataWithoutFiltering) {
-            groups = node.memoizedProps.formatDataWithoutFiltering;
-            break;
-          }
-          node = node.return;
-          depth++;
-        }
-        if (!groups) return { hasCsa: false, hasLender: false };
-
-        var hasCsa = false;
-        var hasLender = false;
-        groups.forEach(function (group) {
-          var title = (group.title || '').trim().toLowerCase().replace(/\s*\(\d+\)\s*$/, '');
-          var items = group.lineItems || group.items || [];
-          if (title === 'custom selection allowances') {
-            hasCsa = items.some(function (item) {
-              var name = (item.itemTitle || '').toLowerCase();
-              return name.length > 0 && !/place.?holder/i.test(name);
-            });
-          }
-          if (title === 'preferred lender incentive') {
-            hasLender = items.some(function (item) {
-              return item.quantity === 1;
-            });
-          }
-        });
-        return { hasCsa: hasCsa, hasLender: hasLender };
-      }
-    });
-    var groupFlags = (flagsRes && flagsRes[0] && flagsRes[0].result) || { hasCsa: false, hasLender: false };
-    log('Group flags — CSA: ' + groupFlags.hasCsa + ', Lender: ' + groupFlags.hasLender);
-
-    // Step 1: Click buildProposal, then wait for the proposal page to fire its draft request
+    // Step 1: Click buildProposal button
     log('Opening proposal builder…');
     setStatus('Opening proposal…');
-    // Snapshot resource count before clicking so we can find NEW entries after
-    var preClickCount = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: function () { return performance.getEntriesByType('resource').length; }
-    });
-    var preCount = (preClickCount && preClickCount[0] && preClickCount[0].result) || 0;
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: function () {
+      target: { tabId: tabId }, world: 'MAIN',
+      func: async function() {
         var btn = document.querySelector('[data-testid="buildProposal"]');
         if (btn) btn.click();
       }
     });
-    // Wait up to 6s for the proposal draft request to appear in performance entries
-    var proposalJobId = null;
-    for (var pw = 0; pw < 40; pw++) {
-      await delay(150);
-      var jobIdRes = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: function (startIdx) {
-          var resources = performance.getEntriesByType('resource');
-          // Scan only entries added AFTER the click (backwards for most recent first)
-          for (var ri = resources.length - 1; ri >= startIdx; ri--) {
-            var m = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-            if (m) return m[1];
-          }
-          return null;
-        },
-        args: [preCount]
-      });
-      proposalJobId = jobIdRes && jobIdRes[0] && jobIdRes[0].result;
-      if (proposalJobId) break;
-    }
-    log('Proposal jobId: ' + (proposalJobId || 'not found — will fall back to save button'));
-    await delay(1000);
+    await delay(2500);
 
-    // Step 1.5: Fill editors if grand total available
-    if (grandTotal > 0) {
+    // Step 1.5: Fill editor1 (intro) and editor2 (closing) via CKEditor API
+    if (_grandTotal > 0) {
       log('Filling proposal editors…');
       setStatus('Writing proposal text…');
+      var _lowFmt  = '$' + Math.round(_grandTotal * 0.99).toLocaleString('en-US');
+      var _highFmt = '$' + Math.round(_grandTotal * 1.10).toLocaleString('en-US');
 
       // Read sales notes from SALES NOTES sheet tab
-      var salesNotesText = '';
+      var _salesNotesText = '';
       try {
-        var snResp = await new Promise(function(resolve, reject) {
+        var _snResp = await new Promise(function(resolve, reject) {
           chrome.runtime.sendMessage(
             { action: 'READ_CELLS_RANGE_TAB', tab: 'SALES NOTES', range: 'A1' },
             function(resp) {
@@ -1192,35 +1125,28 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             }
           );
         });
-        salesNotesText = ((snResp.data && snResp.data[0] && snResp.data[0][0]) || '').trim();
+        _salesNotesText = ((_snResp.data && _snResp.data[0] && _snResp.data[0][0]) || '').trim();
       } catch(e) { log('⚠ Could not read sales notes: ' + e.message); }
 
-      var lowFmt  = '$' + Math.round(grandTotal * 0.99).toLocaleString('en-US');
-      var highFmt = '$' + Math.round(grandTotal * 1.10).toLocaleString('en-US');
-
-      // Build notes block if notes exist — same header style as WHAT'S INCLUDED
-      var notesBlock = '';
-      if (salesNotesText) {
-        var noteLines = salesNotesText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
-        var notesBody = noteLines.map(function(l) {
+      var _notesBlock = '';
+      if (_salesNotesText) {
+        var _noteLines = _salesNotesText.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+        var _notesBody = _noteLines.map(function(l){
           return l.startsWith('-') ? '<li>' + l.slice(1).trim() + '</li>' : '<p>' + l + '</p>';
         }).join('');
-        var hasListItems = noteLines.some(function(l) { return l.startsWith('-'); });
-        if (hasListItems) notesBody = '<ul>' + notesBody + '</ul>';
-        notesBlock = '<p>&nbsp;</p>' +
-          '<h2><span style="font-size:16px;"><strong>NOTES</strong></span></h2><hr />' +
-          notesBody;
+        if (_noteLines.some(function(l){ return l.startsWith('-'); })) _notesBody = '<ul>' + _notesBody + '</ul>';
+        _notesBlock = '<p>&nbsp;</p><h2><span style="font-size:16px;"><strong>NOTES</strong></span></h2><hr />' + _notesBody;
       }
 
-      var introHtml = [
+      var _introHtml = [
         '<p><em>This is a preliminary estimate for budgeting purposes only &mdash; not a contract or binding price.</em></p>',
         '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;',
         '<table align="center" border="1" cellpadding="1" cellspacing="1" style="width:500px;">',
         '<tbody><tr><td style="text-align: center;">',
         '<h3><span style="font-size:16px;"><strong>ESTIMATED BUDGET RANGE</strong></span></h3>',
-        '<h1><span style="font-size:28px;"><strong>' + lowFmt + ' &ndash; ' + highFmt + '</strong></span></h1>',
+        '<h1><span style="font-size:28px;"><strong>' + _lowFmt + ' &ndash; ' + _highFmt + '</strong></span></h1>',
         '</td></tr></tbody></table>',
-        notesBlock,
+        _notesBlock,
         '&nbsp;',
         '<p>&nbsp;</p>',
         '<h2><span style="font-size:16px;"><strong>WHAT&#39;S INCLUDED IN YOUR ESTIMATE&nbsp;</strong></span></h2>',
@@ -1234,7 +1160,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         '<p><hr /><strong>Site Work</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Site clearing, grading, driveway, and all utilities including municipal tap fees</p>',
         '<p><hr /><strong>Decks / Porches</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Porches and decks finished per spec</p>'
       ].join('');
-      var closingHtml = [
+      var _closingHtml = [
         '<h2><span style="font-size:16px;"><span style="color:#000000;"><strong>BUDGET PRICING SUMMARY</strong></span></span></h2>',
         '<hr />',
         '<p>The pricing shown in this proposal represents the initial contract amount for Milestone 1 and is based on the information available at this stage of the project. Because detailed selections and final site confirmations have not yet been completed, this is not the final contract price.</p>',
@@ -1290,13 +1216,10 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         '<p style="text-align: center;"><span style="color:#999999;">With the design aligned and pricing refined, we move confidently into the next milestone and continue turning your plans into reality.</span></p>',
         '<p style="text-align: center;"><em>Keel Custom Homes &bull; Preliminary Budget Estimate &bull; Confidential</em></p>'
       ].join('');
-
-      var fillResult = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: async function (introHtml, closingHtml, knownJobId) {
-          function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-          var _status = { ckEditors: 0, jobId: null, putStatus: null, branch: null };
-
+      var _editorResult = await chrome.scripting.executeScript({
+        target: { tabId: tabId }, world: 'MAIN',
+        func: async function(introHtml, closingHtml) {
+          function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
           var titleInput = document.querySelector('#title[data-testid="title"]');
           if (titleInput) {
             var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -1311,59 +1234,63 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             await delay(300);
             waited += 300;
           }
-          if (!window.CKEDITOR) { _status.branch = 'no-ckeditor'; return _status; }
+          if (!window.CKEDITOR) return;
           var editorKeys = Object.keys(CKEDITOR.instances);
-          _status.ckEditors = editorKeys.length;
-          if (editorKeys.length < 2) { _status.branch = 'too-few-editors'; return _status; }
+          if (editorKeys.length < 2) return;
           var editorA = CKEDITOR.instances[editorKeys[0]];
           var editorB = CKEDITOR.instances[editorKeys[1]];
+
           editorA.setData(introHtml);
           editorB.setData(closingHtml);
           await delay(300);
 
-          // Use the jobId captured right after buildProposal click (most recent, correct proposal)
-          var jobId = knownJobId || null;
-          if (!jobId) {
-            var resources = performance.getEntriesByType('resource');
-            for (var ri = resources.length - 1; ri >= 0; ri--) {
-              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (rm) { jobId = rm[1]; break; }
-            }
+          var jobId = null;
+          var resources = performance.getEntriesByType('resource');
+          for (var ri = 0; ri < resources.length; ri++) {
+            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (rm) { jobId = rm[1]; break; }
           }
-          _status.jobId = jobId;
 
+          console.log('[Duke] jobId found:', jobId);
           if (jobId) {
-            var draft = await new Promise(function (resolve) {
+            console.log('[Duke] GETting current draft via XHR...');
+            var draft = await new Promise(function(resolve) {
               var xhr = new XMLHttpRequest();
               xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
               xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
               xhr.setRequestHeader('portaltype', '1');
-              xhr.onload = function () {
-                if (xhr.status === 200) { try { resolve(JSON.parse(xhr.responseText)); } catch (e) { resolve(null); } }
-                else { resolve(null); }
+              xhr.onload = function() {
+                if (xhr.status === 200) {
+                  try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); }
+                } else { resolve(null); }
               };
-              xhr.onerror = function () { resolve(null); };
+              xhr.onerror = function() { resolve(null); };
               xhr.send();
             });
             if (!draft) {
-              _status.branch = 'no-draft-savebtn';
+              console.log('[Duke] GET failed — falling back to Save button');
               var saveBtn = document.querySelector('[data-testid="save"]');
               if (saveBtn) { saveBtn.click(); await delay(3000); }
             } else {
-              _status.branch = 'full-put';
+              console.log('[Duke] GET ok');
               var putBody = {};
-              Object.keys(draft).forEach(function (k) {
+              Object.keys(draft).forEach(function(k) {
                 if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) {
                   Object.assign(putBody, draft[k]);
                 }
               });
-              if (!('categories' in putBody) && putBody.formatItems) { putBody.categories = putBody.formatItems; }
+              if (!('categories' in putBody) && putBody.formatItems) {
+                putBody.categories = putBody.formatItems;
+              }
               if (!('formatOptions' in putBody)) {
                 var dOpts = putBody.displayOptions || {};
                 var pConf = putBody.proposalDisplayConfig || {};
                 putBody.formatOptions = {
-                  body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
-                  includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
+                  body: dOpts.body,
+                  header: dOpts.header,
+                  printoutType: dOpts.printoutType,
+                  includeSpecs: dOpts.includeSpecs || false,
+                  showAddress: putBody.showAddress || false,
                   showOwnerContactInfo: putBody.showOwnerContactInfo || false,
                   showPrintoutInfo: putBody.showPrintoutInfo || false,
                   proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
@@ -1371,8 +1298,11 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
                 };
               }
               if (Array.isArray(putBody.categories)) {
-                putBody.categories.forEach(function (cat) {
-                  if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; }
+                putBody.categories.forEach(function(cat) {
+                  if (cat.items && !cat.lineItems) {
+                    cat.lineItems = cat.items;
+                    delete cat.items;
+                  }
                 });
               }
               putBody.requireSignatures = false;
@@ -1383,181 +1313,92 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
               putBody.introductionText = introHtml;
               putBody.closingText = closingHtml;
               var bodyStr = JSON.stringify(putBody);
-              var putStatus = await new Promise(function (resolve) {
+              console.log('[Duke] Sending via XHR, body size:', bodyStr.length);
+
+              var xhrStatus = await new Promise(function(resolve) {
                 var xhr = new XMLHttpRequest();
                 xhr.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
                 xhr.setRequestHeader('content-type', 'application/merge-patch+json');
                 xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
                 xhr.setRequestHeader('portaltype', '1');
-                xhr.onload = function () { resolve(xhr.status); };
-                xhr.onerror = function () { resolve(0); };
+                xhr.onload = function() {
+                  console.log('[Duke] XHR status:', xhr.status, xhr.responseText);
+                  resolve(xhr.status);
+                };
+                xhr.onerror = function() { console.log('[Duke] XHR error'); resolve(0); };
                 xhr.send(bodyStr);
               });
-              _status.putStatus = putStatus;
               await delay(1500);
               editorA.setData(introHtml);
               editorB.setData(closingHtml);
               await delay(300);
             }
           } else {
-            _status.branch = 'no-jobid-savebtn';
+            console.log('[Duke] jobId NOT found — falling back to Save button');
             var saveBtn2 = document.querySelector('[data-testid="save"]');
             if (saveBtn2) { saveBtn2.click(); await delay(3000); }
           }
-          return _status;
         },
-        args: [introHtml, closingHtml, proposalJobId]
+        args: [_introHtml, _closingHtml]
       });
-
-      var fillStatus = fillResult && fillResult[0] && fillResult[0].result;
-      log('Proposal editors filled. [ck:' + (fillStatus && fillStatus.ckEditors) + ' jobId:' + (fillStatus && fillStatus.jobId) + ' branch:' + (fillStatus && fillStatus.branch) + ' put:' + (fillStatus && fillStatus.putStatus) + ']');
-      await delay(2000);
-
-      // Uncheck signatures
+      var _saveResult = _editorResult && _editorResult[0] && _editorResult[0].result;
+      log('Proposal save result: ' + JSON.stringify(_saveResult));
       await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: function () {
+        target: { tabId: tabId }, world: 'MAIN',
+        func: async function() {
+          var resources = performance.getEntriesByType('resource');
+          var jobId = null;
+          for (var ri = 0; ri < resources.length; ri++) {
+            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (rm) { jobId = rm[1]; break; }
+          }
+          if (!jobId) return;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, false);
+          xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+          xhr.setRequestHeader('portaltype', '1');
+          xhr.send();
+          if (xhr.status === 200) {
+            try {
+              var d = JSON.parse(xhr.responseText);
+              var intro = (d.proposal && d.proposal.introductionText) || '';
+              console.log('[Duke] Verify GET introductionText starts with:', intro.slice(0, 80));
+            } catch(e) {}
+          }
+        }
+      });
+      await delay(2000);
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId }, world: 'MAIN',
+        func: function() {
           var cb = document.querySelector('[data-testid="requireSignatures"]');
           if (cb) {
             var wrapper = cb.closest('.ant-checkbox-wrapper');
-            if (wrapper && wrapper.classList.contains('ant-checkbox-wrapper-checked')) { cb.click(); }
-          }
-        }
-      });
-      await delay(500);
-
-      // Click Save button to persist all changes before navigating away
-      log('Saving proposal…');
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: function () {
-          var btn = document.querySelector('[data-testid="save"]');
-          if (btn) btn.click();
-        }
-      });
-      await delay(3000);
-
-      // CKEditor normalizes HTML on save and can re-bold things — do a final
-      // merge-patch after the save to lock in our exact intro/closing text.
-      log('Locking proposal text…');
-      var lockResult = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: async function (iHtml, cHtml, knownJobId) {
-          var jobId = knownJobId || null;
-          if (!jobId) {
-            var resources = performance.getEntriesByType('resource');
-            for (var ri = resources.length - 1; ri >= 0; ri--) {
-              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (rm) { jobId = rm[1]; break; }
+            if (wrapper && wrapper.classList.contains('ant-checkbox-wrapper-checked')) {
+              cb.click();
+              console.log('[Duke] Unchecked requireSignatures');
             }
           }
-          if (!jobId) return { lockStatus: null, verifyIntroLen: null };
-          // Full GET → PUT (same as main save) so BT's API accepts it
-          var draft = await new Promise(function (resolve) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
-            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
-            xhr.setRequestHeader('portaltype', '1');
-            xhr.onload = function () { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); } };
-            xhr.onerror = function () { resolve(null); };
-            xhr.send();
-          });
-          if (!draft) return { lockStatus: null, verifyIntroLen: null };
-          var putBody = {};
-          Object.keys(draft).forEach(function (k) {
-            if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) { Object.assign(putBody, draft[k]); }
-          });
-          if (!('categories' in putBody) && putBody.formatItems) { putBody.categories = putBody.formatItems; }
-          if (!('formatOptions' in putBody)) {
-            var dOpts = putBody.displayOptions || {};
-            var pConf = putBody.proposalDisplayConfig || {};
-            putBody.formatOptions = {
-              body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
-              includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
-              showOwnerContactInfo: putBody.showOwnerContactInfo || false,
-              showPrintoutInfo: putBody.showPrintoutInfo || false,
-              proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
-              hasSingleSelectCostTypes: pConf.hasSingleSelectCostTypes || false
-            };
-          }
-          if (Array.isArray(putBody.categories)) {
-            putBody.categories.forEach(function (cat) {
-              if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; }
-            });
-          }
-          putBody.requireSignatures = false;
-          putBody.requiredSignatureUsers = [];
-          if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) {
-            putBody.columnsToDisplay = putBody.columnsToDisplay.value;
-          }
-          putBody.introductionText = iHtml;
-          putBody.closingText = cHtml;
-          var lockStatus = await new Promise(function (resolve) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
-            xhr.setRequestHeader('content-type', 'application/merge-patch+json');
-            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
-            xhr.setRequestHeader('portaltype', '1');
-            xhr.onload = function () { resolve(xhr.status); };
-            xhr.onerror = function () { resolve(0); };
-            xhr.send(JSON.stringify(putBody));
-          });
-          // Verify
-          var vxhr = new XMLHttpRequest();
-          vxhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, false);
-          vxhr.setRequestHeader('accept', 'application/json, text/plain, */*');
-          vxhr.setRequestHeader('portaltype', '1');
-          vxhr.send();
-          var verifyIntroLen = null;
-          if (vxhr.status === 200) {
-            try {
-              var vdata = JSON.parse(vxhr.responseText);
-              var intro = vdata.introductionText || (vdata.proposal && vdata.proposal.introductionText) || '';
-              verifyIntroLen = intro.length;
-            } catch(e) {}
-          }
-          return { lockStatus: lockStatus, verifyIntroLen: verifyIntroLen };
-        },
-        args: [introHtml, closingHtml, proposalJobId]
-      });
-      var lr = lockResult && lockResult[0] && lockResult[0].result;
-      log('Lock result: status=' + (lr && lr.lockStatus) + ' verifyIntroLen=' + (lr && lr.verifyIntroLen));
-      await delay(500);
-
-      // The proposal page's React app still holds the pre-lock text in memory
-      // (it fetched the draft before our PUT). Reload so it re-fetches fresh
-      // data — otherwise switching to Client Preview shows the stale in-memory text.
-      log('Reloading proposal page to sync saved text…');
-      setStatus('Reloading proposal page…');
-      await chrome.tabs.reload(tab.id);
-      await new Promise(function (resolve) {
-        function checkStatus() {
-          chrome.tabs.get(tab.id, function (t) {
-            if (t && t.status === 'complete') { resolve(); } else { setTimeout(checkStatus, 300); }
-          });
         }
-        setTimeout(checkStatus, 800);
       });
-      await delay(2500);
     }
 
     // Step 2: Click Client Preview tab
     log('Navigating to client preview…');
-    setStatus('Navigating to client preview…');
     var previewResult = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: async function () {
-        function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+      target: { tabId: tabId }, world: 'MAIN',
+      func: async function() {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
         function waitFor(fn, ms) {
-          return new Promise(function (res, rej) {
+          return new Promise(function(res, rej) {
             var end = Date.now() + (ms || 6000);
-            (function tick() { var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
+            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
           });
         }
-        var tabEl = await waitFor(function () {
+        var tabEl = await waitFor(function() {
           var el = document.querySelector('[data-testid="jobProposalClientPreviewTab"]');
           return (el && el.offsetParent !== null) ? el : null;
-        }, 6000).catch(function () { return null; });
+        }, 6000).catch(function(){ return null; });
         if (!tabEl) return { ok: false, error: 'Client Preview tab not found' };
         tabEl.click();
         return { ok: true };
@@ -1567,711 +1408,102 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     if (pr && !pr.ok) throw new Error(pr.error || 'Could not open client preview');
     await delay(2000);
 
-    // Step 3: Configure display settings
+    // Step 3: Edit Display to client — remove Cost code, Parent group price, Unit price; add Item title, Description
     log('Configuring display settings…');
     setStatus('Setting display…');
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: async function () {
-        function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+      target: { tabId: tabId }, world: 'MAIN',
+      func: async function() {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
         function waitFor(fn, ms) {
-          return new Promise(function (res, rej) {
+          return new Promise(function(res, rej) {
             var end = Date.now() + (ms || 5000);
-            (function tick() { var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
+            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
           });
         }
+
         function removeTag(label) {
           var norm = label.trim().toLowerCase();
           var items = Array.from(document.querySelectorAll('.ant-select-selection-item'));
-          var item = items.find(function (el) {
+          var item = items.find(function(el) {
             var c = el.querySelector('.ant-select-selection-item-content');
             return c && c.textContent.trim().toLowerCase() === norm;
           });
-          if (item) { var btn = item.querySelector('.ant-select-selection-item-remove'); if (btn) { btn.click(); return true; } }
+          if (item) {
+            var btn = item.querySelector('.ant-select-selection-item-remove');
+            if (btn) { btn.click(); return true; }
+          }
           return false;
         }
+
         async function addOption(label) {
           var input = document.querySelector('#columnsToDisplay');
           if (!input) return;
           input.focus(); input.click();
           await delay(400);
-          var node = await waitFor(function () {
-            return Array.from(document.querySelectorAll('.ant-select-tree-node-content-wrapper')).find(function (n) {
+          var node = await waitFor(function() {
+            return Array.from(document.querySelectorAll('.ant-select-tree-node-content-wrapper')).find(function(n) {
               return (n.getAttribute('title') || n.textContent || '').trim().toLowerCase() === label.toLowerCase();
             });
-          }, 4000).catch(function () { return null; });
+          }, 4000).catch(function(){ return null; });
           if (node) { node.click(); await delay(300); }
           document.body.click();
           await delay(200);
         }
-        removeTag('Cost code');          await delay(200);
+
+        removeTag('Cost code');    await delay(200);
         removeTag('Parent group price'); await delay(200);
-        removeTag('Unit price');         await delay(200);
-        var existing = Array.from(document.querySelectorAll('.ant-select-selection-item-content')).map(function (el) { return el.textContent.trim().toLowerCase(); });
-        if (!existing.includes('item title'))  await addOption('Item title');
-        if (!existing.includes('description')) await addOption('Description');
+        removeTag('Unit price');   await delay(200);
+
+        var existing = Array.from(document.querySelectorAll('.ant-select-selection-item-content')).map(function(el){ return el.textContent.trim().toLowerCase(); });
+        if (!existing.includes('item title'))   await addOption('Item title');
+        if (!existing.includes('description'))  await addOption('Description');
       }
     });
     await delay(1000);
 
-    // Step 4: Collapse all groups except Selection/Site Allowances
+    // Step 4: Collapse all groups EXCEPT Selection Allowance & Site Allowance
     log('Configuring groups…');
     setStatus('Configuring groups…');
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: 'MAIN',
-      func: async function (hasCsa, hasLender) {
-        function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+      target: { tabId: tabId }, world: 'MAIN',
+      func: async function() {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
         var KEEP_EXPANDED = ['selection allowances', 'site allowances'];
-        if (hasCsa)    KEEP_EXPANDED.push('custom selection allowances');
-        if (hasLender) KEEP_EXPANDED.push('preferred lender incentive');
 
         var expandedItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup.ant-collapse-item-active'));
         for (var i = 0; i < expandedItems.length; i++) {
           var nameEl = expandedItems[i].querySelector('h3.ant-typography');
           var name = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
           var cleanName = name.replace(/\s*\(1\)\s*$/, '');
-          var keep = KEEP_EXPANDED.some(function (k) { return cleanName === k; });
-          if (!keep) { var header = expandedItems[i].querySelector('.ant-collapse-header'); if (header) { header.click(); await delay(200); } }
+          var keep = KEEP_EXPANDED.some(function(k) { return cleanName === k; });
+          if (!keep) {
+            var header = expandedItems[i].querySelector('.ant-collapse-header');
+            if (header) { header.click(); await delay(200); }
+          }
         }
+
         var allItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup'));
         for (var j = 0; j < allItems.length; j++) {
           var nameEl2 = allItems[j].querySelector('h3.ant-typography');
           var name2 = nameEl2 ? nameEl2.textContent.trim().toLowerCase() : '';
           var cleanName2 = name2.replace(/\s*\(1\)\s*$/, '');
-          var shouldExpand = KEEP_EXPANDED.some(function (k) { return cleanName2 === k; });
-          if (shouldExpand && !allItems[j].classList.contains('ant-collapse-item-active')) {
-            var header2 = allItems[j].querySelector('.ant-collapse-header');
-            if (header2) { header2.click(); await delay(200); }
+          var shouldExpand = KEEP_EXPANDED.some(function(k) { return cleanName2 === k; });
+          if (shouldExpand) {
+            var isCollapsed = !allItems[j].classList.contains('ant-collapse-item-active');
+            if (isCollapsed) {
+              var header2 = allItems[j].querySelector('.ant-collapse-header');
+              if (header2) { header2.click(); await delay(200); }
+            }
           }
         }
-      },
-      args: [groupFlags.hasCsa, groupFlags.hasLender]
+      }
     });
     await delay(800);
 
-    // Final locking PUT with retry — display settings and group collapses trigger BT's
-    // debounced React auto-save which overwrites our PUT on its own timer (1-3s later).
-    // We wait 4s to let that auto-save fire first, then PUT and verify in a retry loop
-    // until the text stabilises for 2 consecutive GETs.
-    await delay(4000);
-    if (grandTotal > 0) {
-      log('Final text lock after display config…');
-      var finalLockResult = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: async function (iHtml, cHtml, knownJobId) {
-          var jobId = knownJobId || null;
-          if (!jobId) {
-            var resources = performance.getEntriesByType('resource');
-            for (var ri = resources.length - 1; ri >= 0; ri--) {
-              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (rm) { jobId = rm[1]; break; }
-            }
-          }
-          if (!jobId) return { lockStatus: null, verifyIntroLen: null };
-          var draft = await new Promise(function (resolve) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
-            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
-            xhr.setRequestHeader('portaltype', '1');
-            xhr.onload = function () { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); } };
-            xhr.onerror = function () { resolve(null); };
-            xhr.send();
-          });
-          if (!draft) return { lockStatus: null, verifyIntroLen: null };
-          var putBody = {};
-          Object.keys(draft).forEach(function (k) {
-            if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) { Object.assign(putBody, draft[k]); }
-          });
-          if (!('categories' in putBody) && putBody.formatItems) { putBody.categories = putBody.formatItems; }
-          if (!('formatOptions' in putBody)) {
-            var dOpts = putBody.displayOptions || {};
-            var pConf = putBody.proposalDisplayConfig || {};
-            putBody.formatOptions = {
-              body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
-              includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
-              showOwnerContactInfo: putBody.showOwnerContactInfo || false,
-              showPrintoutInfo: putBody.showPrintoutInfo || false,
-              proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
-              hasSingleSelectCostTypes: pConf.hasSingleSelectCostTypes || false
-            };
-          }
-          if (Array.isArray(putBody.categories)) {
-            putBody.categories.forEach(function (cat) {
-              if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; }
-            });
-          }
-          putBody.requireSignatures = false;
-          putBody.requiredSignatureUsers = [];
-          if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) {
-            putBody.columnsToDisplay = putBody.columnsToDisplay.value;
-          }
-          putBody.introductionText = iHtml;
-          putBody.closingText = cHtml;
-
-          function doGetIntroLen(jid) {
-            var vx = new XMLHttpRequest();
-            vx.open('GET', '/apix/v2/Proposals/draft?jobId=' + jid, false);
-            vx.setRequestHeader('accept', 'application/json, text/plain, */*');
-            vx.setRequestHeader('portaltype', '1');
-            vx.send();
-            if (vx.status !== 200) return null;
-            try { var d = JSON.parse(vx.responseText); return (d.introductionText || (d.proposal && d.proposal.introductionText) || '').length; } catch(e) { return null; }
-          }
-          function doPut(body, jid) {
-            return new Promise(function(resolve) {
-              var px = new XMLHttpRequest();
-              px.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jid, true);
-              px.setRequestHeader('content-type', 'application/merge-patch+json');
-              px.setRequestHeader('accept', 'application/json, text/plain, */*');
-              px.setRequestHeader('portaltype', '1');
-              px.onload = function() { resolve(px.status); };
-              px.onerror = function() { resolve(0); };
-              px.send(JSON.stringify(body));
-            });
-          }
-
-          // Retry loop: PUT → verify immediately → wait 3s → verify again.
-          // If BT's debounced auto-save fires and changes the text, PUT again.
-          // Repeat up to 3 times so our write is always last.
-          var lockStatus = null;
-          var verifyIntroLen = null;
-          var expectedLen = iHtml.length;
-          for (var retryIdx = 0; retryIdx < 3; retryIdx++) {
-            lockStatus = await doPut(putBody, jobId);
-            var lenAfterPut = doGetIntroLen(jobId);
-            await new Promise(function(r){ setTimeout(r, 3000); });
-            var lenAfterWait = doGetIntroLen(jobId);
-            verifyIntroLen = lenAfterWait;
-            if (lenAfterWait === lenAfterPut) break; // stable — no auto-save overwrote us
-            // BT auto-save changed the text — loop and PUT again
-          }
-          return { lockStatus: lockStatus, verifyIntroLen: verifyIntroLen };
-        },
-        args: [introHtml, closingHtml, proposalJobId]
-      });
-      var flr = finalLockResult && finalLockResult[0] && finalLockResult[0].result;
-      log('Final lock result: status=' + (flr && flr.lockStatus) + ' verifyIntroLen=' + (flr && flr.verifyIntroLen));
-    }
-
     log('✓ Client preview setup complete');
-    setStatus('Opening print dialog…');
-
     statusEl.className = 'progress-status success';
     statusEl.textContent = '✓ Client preview is ready.';
-
-    // ── dead code below kept for reference, never reached ───
-    if (false) { var jobIdFromUrl = null;
-      var proposalRes = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: 'MAIN',
-        func: function (urlJobId) {
-          var jobId = urlJobId;
-          if (!jobId) {
-            var entries = performance.getEntriesByType('resource');
-            for (var i = 0; i < entries.length; i++) {
-              var m = entries[i].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (m) { jobId = m[1]; break; }
-            }
-          }
-          if (!jobId) return { ok: false, error: 'jobId not found' };
-
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, false);
-          xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
-          xhr.setRequestHeader('portaltype', '1');
-          try { xhr.send(); } catch(e) { return { ok: false, error: 'XHR send: ' + e.message }; }
-          if (xhr.status !== 200) return { ok: false, error: 'GET ' + xhr.status };
-
-          try {
-            var draft = JSON.parse(xhr.responseText);
-            var proposal = draft.proposal || draft || {};
-            var ji = draft.jobInfo || {};
-
-            var rawCats = proposal.formatItems || proposal.categories || draft.formatItems || [];
-            var categories = rawCats.map(function (cat) {
-              var rawItems = cat.items || cat.lineItems || [];
-              return {
-                name: cat.name || cat.groupName || '',
-                description: cat.description || '',
-                items: rawItems.map(function (it) {
-                  return {
-                    name: it.description || it.name || '',
-                    qty: it.quantity != null ? it.quantity : (it.qty != null ? it.qty : ''),
-                    unit: it.unitOfMeasure || it.unit || '',
-                    price: it.totalOwnerPrice || it.totalOwnerCost || 0
-                  };
-                }),
-                total: cat.totalOwnerPrice || cat.totalOwnerCost || 0
-              };
-            });
-
-            // Job address — may be string or object
-            var addr = ji.address || ji.jobAddress || ji.propertyAddress || '';
-            if (addr && typeof addr === 'object') {
-              addr = [addr.street || addr.streetAddress, addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
-            }
-
-            return {
-              ok: true,
-              jobId: jobId,
-              title: proposal.title || 'Preliminary Budget Estimate',
-              jobName: ji.jobName || ji.name || '',
-              jobAddress: addr,
-              companyName: ji.companyName || 'Keel Custom Homes',
-              categories: categories
-            };
-          } catch (e) {
-            return { ok: false, error: 'parse: ' + e.message };
-          }
-        },
-        args: [jobIdFromUrl]
-      });
-
-      var pd = proposalRes && proposalRes[0] && proposalRes[0].result;
-      if (!pd || !pd.ok) {
-        log('⚠ Proposal data fetch failed: ' + ((pd && pd.error) || 'unknown'));
-        statusEl.className = 'progress-status success';
-        statusEl.textContent = '✓ Client preview ready (PDF data fetch failed).';
-      } else {
-        log('Building PDF — ' + pd.categories.length + ' categories…');
-        setStatus('Building PDF…');
-
-        // 2. Build jsPDF text-based document
-        var doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait' });
-        var pW = 612, pH = 792, mL = 50, mR = 50, mT = 55, mB = 55;
-        var cW = pW - mL - mR;
-        var y = mT;
-
-        function newPage() { doc.addPage(); y = mT; }
-        function chk(need) { if (y + need > pH - mB) newPage(); }
-        function sp(n) { y += (n || 8); }
-        function hr(g) {
-          var c = (g != null ? g : 190);
-          doc.setDrawColor(c, c, c);
-          doc.setLineWidth(0.5);
-          doc.line(mL, y, pW - mR, y);
-          y += 5;
-        }
-        function txt(str, x, sz, style, rgb, maxW) {
-          doc.setFontSize(sz || 10);
-          doc.setFont('helvetica', style || 'normal');
-          if (rgb) doc.setTextColor(rgb[0], rgb[1], rgb[2]);
-          var lines = doc.splitTextToSize(String(str || ''), maxW || (pW - mR - (x || mL)));
-          for (var i = 0; i < lines.length; i++) {
-            chk((sz || 10) * 1.45);
-            doc.text(lines[i], x || mL, y);
-            y += (sz || 10) * 1.45;
-          }
-          if (rgb) doc.setTextColor(0, 0, 0);
-        }
-        function fmtMoney(n) {
-          if (!n && n !== 0) return '';
-          return '$' + parseFloat(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        }
-
-        // ── Header ──────────────────────────────────────────
-        // Gold box logo top-left
-        doc.setFillColor(232, 184, 75);
-        doc.rect(mL, mT - 4, 40, 40, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.setTextColor(26, 26, 46);
-        doc.text('KEEL', mL + 20, mT + 12, { align: 'center' });
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.text('custom homes', mL + 20, mT + 22, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-
-        // Company info top-right
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.setTextColor(26, 26, 46);
-        doc.text(pd.companyName || 'Keel Custom Homes', pW - mR, mT + 4, { align: 'right' });
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(90, 90, 90);
-        doc.text('2128 Staples Mill Rd Suite 200', pW - mR, mT + 16, { align: 'right' });
-        doc.text('Richmond, VA 23230', pW - mR, mT + 27, { align: 'right' });
-        doc.text('804-206-9280', pW - mR, mT + 38, { align: 'right' });
-        doc.setTextColor(0, 0, 0);
-
-        y = mT + 52;
-        hr(200);
-        sp(6);
-
-        // Job address
-        if (pd.jobAddress || pd.jobName) {
-          doc.setFontSize(8);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(100, 100, 100);
-          doc.text('Job Address', mL, y); y += 11;
-          doc.setTextColor(0, 0, 0);
-          doc.setFontSize(10);
-          doc.setFont('helvetica', 'bold');
-          if (pd.jobName) { doc.text(pd.jobName, mL, y); y += 13; }
-          doc.setFont('helvetica', 'normal');
-          if (pd.jobAddress) { doc.text(pd.jobAddress, mL, y); y += 13; }
-          sp(6);
-        }
-
-        // Title
-        doc.setFontSize(17);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        chk(24);
-        doc.text(pd.title || 'Preliminary Budget Estimate', mL, y); y += 24;
-        doc.setTextColor(0, 0, 0);
-
-        // Disclaimer
-        doc.setFontSize(8.5);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(100, 100, 100);
-        var discLines = doc.splitTextToSize('This is a preliminary estimate for budgeting purposes only — not a contract or binding price.', cW);
-        discLines.forEach(function (l) { chk(12); doc.text(l, mL, y); y += 12; });
-        doc.setTextColor(0, 0, 0);
-        sp(14);
-
-        // ── Budget Range Box ─────────────────────────────────
-        if (grandTotal > 0) {
-          var lowFmt2  = '$' + Math.round(grandTotal * 0.99).toLocaleString('en-US');
-          var highFmt2 = '$' + Math.round(grandTotal * 1.10).toLocaleString('en-US');
-          var bxW = 260, bxH = 58, bxX = mL + (cW - bxW) / 2;
-          chk(bxH + 16);
-          doc.setFillColor(248, 248, 248);
-          doc.setDrawColor(200, 200, 200);
-          doc.setLineWidth(0.75);
-          doc.rect(bxX, y, bxW, bxH, 'FD');
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.5);
-          doc.setTextColor(80, 80, 80);
-          doc.text('ESTIMATED BUDGET RANGE', bxX + bxW / 2, y + 15, { align: 'center' });
-          doc.setFontSize(19);
-          doc.setTextColor(26, 26, 46);
-          doc.text(lowFmt2 + ' – ' + highFmt2, bxX + bxW / 2, y + 44, { align: 'center' });
-          doc.setTextColor(0, 0, 0);
-          y += bxH + 16;
-        }
-        sp(8);
-
-        // ── What's Included ──────────────────────────────────
-        chk(40);
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        doc.text("WHAT'S INCLUDED IN YOUR ESTIMATE", mL, y); y += 15;
-        doc.setTextColor(0, 0, 0);
-        hr(210);
-
-        var included = [
-          ['Design & Pre-Construction', 'Complete architectural plans, engineering, permits, surveys, and inspections'],
-          ['Foundation', 'Standard footings, walls, waterproofing, and backfill'],
-          ['Framing & Structure', 'Full framing package including lumber, trusses, engineered joists, and stairs'],
-          ['Exterior Envelope', 'Siding exterior with architectural shingle roofing, gutters, and all exterior trim'],
-          ['Mechanical Systems', 'Complete HVAC, plumbing rough & finish, and electrical rough & finish'],
-          ['Insulation & Drywall', 'Full insulation to code, drywall, and interior/exterior paint'],
-          ['Interior Finishes', 'Interior doors, trim, hardware, and custom carpentry allowance'],
-          ['Site Work', 'Site clearing, grading, driveway, and all utilities including municipal tap fees'],
-          ['Decks / Porches', 'Porches and decks finished per spec']
-        ];
-        var colLabelW = 155;
-        included.forEach(function (row) {
-          chk(13);
-          doc.setFontSize(8.5);
-          doc.setFont('helvetica', 'bold');
-          doc.text(row[0], mL, y);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(60, 60, 60);
-          var dLines = doc.splitTextToSize(row[1], cW - colLabelW);
-          dLines.forEach(function (dl, di) {
-            chk(13);
-            if (di > 0) y += 12;
-            doc.text(dl, mL + colLabelW, y);
-          });
-          doc.setTextColor(0, 0, 0);
-          y += 13;
-          hr(225);
-        });
-        sp(14);
-
-        // ── Category Tables ──────────────────────────────────
-        var colW = [148, 196, 68, 100]; // Item | Description | Qty/Unit | Price  (sum=512)
-        pd.categories.forEach(function (cat) {
-          chk(36);
-          // Category heading
-          doc.setFontSize(11);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(26, 26, 46);
-          doc.text(cat.name || '', mL, y); y += 15;
-          doc.setTextColor(0, 0, 0);
-
-          if (cat.description) {
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(90, 90, 90);
-            var dL = doc.splitTextToSize(cat.description, cW);
-            dL.forEach(function (l) { chk(11); doc.text(l, mL, y); y += 11; });
-            doc.setTextColor(0, 0, 0);
-            sp(3);
-          }
-
-          if (cat.items && cat.items.length > 0) {
-            // Table header row
-            chk(20);
-            doc.setFillColor(230, 232, 237);
-            doc.rect(mL, y - 10, cW, 16, 'F');
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor(40, 40, 40);
-            var hx = mL;
-            ['Item', 'Description', 'Qty / Unit', 'Price'].forEach(function (h, hi) {
-              if (hi === 3) {
-                doc.text(h, hx + colW[hi] - 4, y, { align: 'right' });
-              } else {
-                doc.text(h, hx + 3, y);
-              }
-              hx += colW[hi];
-            });
-            y += 6;
-            doc.setDrawColor(210, 212, 218);
-            doc.setLineWidth(0.3);
-            doc.line(mL, y, mL + cW, y);
-            y += 4;
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            cat.items.forEach(function (item, ii) {
-              var nameLines = doc.splitTextToSize(item.name || '', colW[0] - 6);
-              var descLines = doc.splitTextToSize(item.description || '', colW[1] - 6);
-              var maxL = Math.max(nameLines.length, descLines.length, 1);
-              var rowH = Math.max(14, maxL * 11 + 4);
-              chk(rowH);
-
-              if (ii % 2 === 0) {
-                doc.setFillColor(250, 251, 253);
-                doc.rect(mL, y - 10, cW, rowH, 'F');
-              }
-
-              doc.setTextColor(30, 30, 30);
-              var rx = mL;
-              nameLines.forEach(function (l, li) { doc.text(l, rx + 3, y + li * 11); });
-              rx += colW[0];
-              descLines.forEach(function (l, li) { doc.text(l, rx + 3, y + li * 11); });
-              rx += colW[1];
-              var qtyStr = (item.qty !== '' && item.qty != null ? item.qty : '') + (item.unit ? ' ' + item.unit : '');
-              doc.text(qtyStr.trim(), rx + 3, y);
-              rx += colW[2];
-              doc.text(fmtMoney(item.price), rx + colW[3] - 4, y, { align: 'right' });
-
-              y += rowH;
-              doc.setDrawColor(220, 222, 226);
-              doc.line(mL, y - rowH + 2, mL + cW, y - rowH + 2);
-            });
-
-            // Category total row
-            chk(18);
-            doc.setFillColor(238, 240, 244);
-            doc.rect(mL, y - 10, cW, 18, 'F');
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8.5);
-            doc.text('Category Total', mL + 3, y);
-            if (cat.total) doc.text(fmtMoney(cat.total), mL + cW - 4, y, { align: 'right' });
-            doc.setFont('helvetica', 'normal');
-            y += 10;
-
-          } else {
-            // No items — just show total aligned right on same line as name
-            if (cat.total) {
-              doc.setFontSize(8.5);
-              doc.setFont('helvetica', 'bold');
-              doc.text(fmtMoney(cat.total), mL + cW, y - 12, { align: 'right' });
-              doc.setFont('helvetica', 'normal');
-            }
-          }
-
-          sp(12);
-          hr(215);
-          sp(10);
-        });
-
-        // ── Grand Total ──────────────────────────────────────
-        if (grandTotal > 0) {
-          chk(30);
-          doc.setFontSize(12);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Total price:', mL, y);
-          doc.text(fmtMoney(grandTotal), pW - mR, y, { align: 'right' });
-          y += 20;
-          hr(180);
-          sp(16);
-        }
-
-        // ── Budget Pricing Summary ───────────────────────────
-        chk(36);
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        doc.text('BUDGET PRICING SUMMARY', mL, y); y += 16;
-        doc.setTextColor(0, 0, 0);
-        hr();
-        sp(4);
-
-        [
-          'The pricing shown in this proposal represents the initial contract amount for Milestone 1 and is based on the information available at this stage of the project. Because detailed selections and final site confirmations have not yet been completed, this is not the final contract price.',
-          'This budget is intended to establish feasibility, provide direction, and support loan preapproval. As plans are finalized, site conditions are verified, and selections are made, the contract pricing will be refined to reflect the specific scope and investment of your home.',
-          'Any adjustments resulting from confirmed site conditions, completed selections, or requested upgrades will be clearly communicated as information becomes available.'
-        ].forEach(function (p) {
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.splitTextToSize(p, cW).forEach(function (l) { chk(13); doc.text(l, mL, y); y += 13; });
-          sp(7);
-        });
-
-        // ── Allowance Structure ──────────────────────────────
-        chk(36);
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        doc.text('ALLOWANCE STRUCTURE & BUDGET ASSUMPTIONS', mL, y); y += 16;
-        doc.setTextColor(0, 0, 0);
-        hr();
-        sp(4);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        chk(14); doc.text('Allowances', mL, y); y += 14;
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.splitTextToSize('This budget includes allowances for major finish categories. These are placeholder amounts intended to provide a realistic starting point and do not reflect specific brands, products, or final selections at this stage. Final costs will be determined once selections are completed.', cW).forEach(function (l) { chk(13); doc.text(l, mL, y); y += 13; });
-        sp(5);
-        ['If selections exceed the allowance, the difference will be added to the project cost.', 'If selections come in under the allowance, a credit will be applied.'].forEach(function (b) {
-          chk(13); doc.text('•  ' + b, mL + 8, y); y += 13;
-        });
-        sp(10);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        chk(14); doc.text('Budget Assumptions', mL, y); y += 14;
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.splitTextToSize('This budget is based on the following standard residential construction assumptions. If any of these conditions differ, adjustments to cost, design, or schedule may be required.', cW).forEach(function (l) { chk(13); doc.text(l, mL, y); y += 13; });
-        sp(8);
-
-        var assumptions = [
-          { title: 'Lot & Approvals', bullets: ['The lot is legally buildable and compliant with zoning, setbacks, easements, floodplain, and municipal requirements.', 'No rezoning, variances, special use permits, or additional jurisdictional approvals are required.', 'No unusual HOA or architectural review requirements beyond typical residential standards.'] },
-          { title: 'Site & Soil Conditions', bullets: ['Standard soil conditions suitable for typical residential foundation construction.', 'No rock excavation, blasting, or unsuitable soils requiring remediation.', 'Standard foundation type as reflected in current plans.', 'No unanticipated environmental conditions, including wetlands or protected areas.'] },
-          { title: 'Utilities & Infrastructure', bullets: ['Standard utility access is available at the home site.', 'No off-site utility extensions or upgrades are required.', 'No extraordinary stormwater management requirements beyond typical residential construction.'] },
-          { title: 'Construction Conditions', bullets: ['No unusual site constraints affecting access, staging, or logistics.', 'No material shortages or trade disruptions beyond normal market conditions.', 'Plans provided are accurate and complete for this phase of pricing.'] }
-        ];
-        assumptions.forEach(function (sec) {
-          chk(26);
-          doc.setFontSize(9.5);
-          doc.setFont('helvetica', 'bold');
-          doc.text(sec.title, mL, y); y += 13;
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          sec.bullets.forEach(function (b) {
-            var bLines = doc.splitTextToSize('•  ' + b, cW - 10);
-            bLines.forEach(function (bl, bi) {
-              chk(13);
-              doc.text(bi === 0 ? bl : '    ' + bl.trimLeft(), mL + 8, y);
-              y += 13;
-            });
-          });
-          sp(5);
-        });
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(90, 90, 90);
-        chk(13);
-        doc.text('If any of these assumptions prove to be inaccurate, additional costs may be incurred.', mL, y); y += 14;
-        doc.setTextColor(0, 0, 0);
-        doc.setFont('helvetica', 'normal');
-        sp(10);
-
-        // ── Items Not Included ───────────────────────────────
-        chk(36);
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        doc.text('ITEMS NOT INCLUDED IN THIS BUDGET', mL, y); y += 16;
-        doc.setTextColor(0, 0, 0);
-        hr();
-        sp(4);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Unless specifically noted elsewhere in the proposal, the following items are not included:', mL, y); y += 14;
-        [
-          "Building permits and government fees beyond the municipality's building permit",
-          'Utility provider fees and service connection charges',
-          'Well and septic systems (refer to allowances, if applicable)',
-          'Landscaping beyond minimum stabilization',
-          'Off-site improvements or upgrades required by local authorities'
-        ].forEach(function (b) { chk(13); doc.text('•  ' + b, mL + 8, y); y += 13; });
-        sp(5);
-        doc.splitTextToSize('Depending on the lot, jurisdiction, or lender requirements, these items may be required and are often paid directly by the homeowner or financed separately.', cW).forEach(function (l) { chk(13); doc.text(l, mL, y); y += 13; });
-        sp(14);
-
-        // ── What Comes Next ──────────────────────────────────
-        chk(36);
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(26, 26, 46);
-        doc.text('WHAT COMES NEXT', mL, y); y += 16;
-        doc.setTextColor(0, 0, 0);
-        hr();
-        sp(4);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.splitTextToSize('Milestone 2 is where your home begins to take shape. During this phase, we align your site, structural decisions, and exterior selections to significantly reduce pricing uncertainty and move toward a refined price range.', cW).forEach(function (l) { chk(13); doc.text(l, mL, y); y += 13; });
-        sp(8);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(19, 61, 89);
-        chk(14); doc.text('Milestone 2 — Site, Design, and Structural Alignment', mL, y); y += 14;
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        chk(13); doc.text('Purpose: Lock in the size, structure, and exterior of your home to reduce uncertainty and bring greater clarity to pricing.', mL, y); y += 14;
-        sp(6);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(19, 61, 89);
-        chk(14); doc.text('During This Phase — You Provide', mL, y); y += 14;
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        ['Final approval of plan layout and square footage.', 'Exterior selections including roof, windows, siding, doors, and related finishes.', 'Completed site design including house location, driveway layout, clearing, and utilities.'].forEach(function (b) { chk(13); doc.text('•  ' + b, mL + 8, y); y += 13; });
-        sp(6);
-
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(19, 61, 89);
-        chk(14); doc.text('Keel Provides:', mL, y); y += 14;
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        ['"Bid Set" floor plans.', 'Defined structural system.', 'Exterior and site selections priced.', 'A refined price range.'].forEach(function (b) { chk(13); doc.text('•  ' + b, mL + 8, y); y += 13; });
-        sp(20);
-
-        // ── Footer rule ──────────────────────────────────────
-        chk(24);
-        hr(200);
-        sp(6);
-        doc.setFontSize(8.5);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(130, 130, 130);
-        doc.text('Keel Custom Homes  •  Preliminary Budget Estimate  •  Confidential', pW / 2, y, { align: 'center' });
-        doc.setTextColor(0, 0, 0);
-
-        var pdfDataUri = doc.output('datauristring');
-        await chrome.storage.session.set({ pendingProposalPdf: pdfDataUri });
-        chrome.runtime.sendMessage({ action: 'NOTIFY_PDF_READY' });
-        log('✓ PDF ready (' + doc.getNumberOfPages() + ' pages) — click "Open Proposal as PDF" on the webpage');
-        statusEl.className = 'progress-status success';
-        statusEl.textContent = '✓ Done — click "Open Proposal as PDF" on the webpage.';
-      }
-    } // end if(false) dead block
 
   } catch (e) {
     log('ERROR: ' + e.message);
