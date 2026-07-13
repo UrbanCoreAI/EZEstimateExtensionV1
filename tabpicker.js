@@ -1096,13 +1096,18 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     // Step 1: Click buildProposal button
     log('Opening proposal builder…');
     setStatus('Opening proposal…');
-    await chrome.scripting.executeScript({
+    var _buildBtnRes = await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
       func: async function() {
         var btn = document.querySelector('[data-testid="buildProposal"]');
-        if (btn) btn.click();
+        if (btn) { btn.click(); return { found: true }; }
+        return { found: false, url: window.location.href };
       }
     });
+    var _buildBtnStatus = _buildBtnRes && _buildBtnRes[0] && _buildBtnRes[0].result;
+    if (_buildBtnStatus && !_buildBtnStatus.found) {
+      log('⚠ "Build Proposal" button not found on this tab (url: ' + _buildBtnStatus.url + ') — make sure the picked tab is on the estimate page for this job');
+    }
     await delay(2500);
 
     // Step 1.5: Fill editor1 (intro) and editor2 (closing) via CKEditor API

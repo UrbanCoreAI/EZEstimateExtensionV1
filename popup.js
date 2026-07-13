@@ -2175,13 +2175,18 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
   // Step 1: Click buildProposal button
   log('Opening proposal builder…');
   setLabel('Opening proposal…');
-  await chrome.scripting.executeScript({
+  var _buildBtnRes = await chrome.scripting.executeScript({
     target: { tabId }, world: 'MAIN',
     func: async function() {
       var btn = document.querySelector('[data-testid="buildProposal"]');
-      if (btn) btn.click();
+      if (btn) { btn.click(); return { found: true }; }
+      return { found: false, url: window.location.href };
     }
   });
+  var _buildBtnStatus = _buildBtnRes && _buildBtnRes[0] && _buildBtnRes[0].result;
+  if (_buildBtnStatus && !_buildBtnStatus.found) {
+    log('⚠ "Build Proposal" button not found on this tab (url: ' + _buildBtnStatus.url + ')');
+  }
   await delay(2500);
 
   // Step 1.5: Fill editor1 (intro) and editor2 (closing) via CKEditor API
