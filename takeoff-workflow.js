@@ -1,4 +1,4 @@
-// Duke Estimating — Guided Takeoff Workflow
+// Keel EZ Estimate — Guided Takeoff Workflow
 // Runs in the panel context alongside popup.js
 // Requires: $(), showStatus(), sendMsg(), grabTakeoff(), writeValues() from popup.js
 
@@ -390,12 +390,12 @@
           target: { tabId: activeId },
           world: 'MAIN',
           func: function() {
-            if (window.__dukeEnterInjected) return;
-            window.__dukeEnterInjected = true;
-            document.addEventListener('keydown', function _dukeEnter(e) {
+            if (window.__keelEnterInjected) return;
+            window.__keelEnterInjected = true;
+            document.addEventListener('keydown', function _keelEnter(e) {
               if (e.key === 'Enter') {
-                window.__dukeEnterInjected = false;
-                document.removeEventListener('keydown', _dukeEnter);
+                window.__keelEnterInjected = false;
+                document.removeEventListener('keydown', _keelEnter);
                 var action = e.ctrlKey ? 'TAKEOFF_CTRL_ENTER_PRESSED' : 'TAKEOFF_ENTER_PRESSED';
                 chrome.runtime.sendMessage({ action: action });
               }
@@ -518,7 +518,7 @@
         try {
           var probeRes = await chrome.scripting.executeScript({
             target: { tabId: stTab.id },
-            func: function () { return !!window.__dukeListenerRegistered; }
+            func: function () { return !!window.__keelListenerRegistered; }
           });
           var alreadyLoaded = probeRes && probeRes[0] && probeRes[0].result;
           if (!alreadyLoaded) {
@@ -959,7 +959,7 @@
             var specPageIdx = specIdxs[spi];
             try {
               var _t0 = performance.now();
-              console.log('[Duke Timing] [' + specsPageNames[specPageIdx] + '] START spec page processing @' + _t0.toFixed(0) + 'ms');
+              console.log('[Keel Timing] [' + specsPageNames[specPageIdx] + '] START spec page processing @' + _t0.toFixed(0) + 'ms');
 
               // Capture current image URL so we can detect when the page actually changes
               var beforeImgRes = await new Promise(function (res) {
@@ -982,7 +982,7 @@
                 if (candidateUrl && candidateUrl !== beforeUrl) { imageUrl = candidateUrl; break; }
               }
               var _tNavEnd = performance.now();
-              console.log('[Duke Timing] [' + namedSheets[specPageIdx] + '] NAV + page load: ' + (_tNavEnd - _tNavStart).toFixed(0) + 'ms (polls: ' + (wi + 1) + ')');
+              console.log('[Keel Timing] [' + namedSheets[specPageIdx] + '] NAV + page load: ' + (_tNavEnd - _tNavStart).toFixed(0) + 'ms (polls: ' + (wi + 1) + ')');
 
               if (!imageUrl) {
                 // URL never changed — read whatever is current (page may render outside svgedit)
@@ -1001,8 +1001,8 @@
                 chrome.runtime.sendMessage({ action: 'EXTRACT_FLOORING_SPECS', imageUrl: imageUrl, stTabId: wf.stTabId }, res);
               });
               var _tExtractEnd = performance.now();
-              console.log('[Duke Timing] [' + specsPageNames[specPageIdx] + '] EXTRACT_FLOORING_SPECS total: ' + (_tExtractEnd - _tExtractStart).toFixed(0) + 'ms');
-              console.log('[Duke Timing] [' + specsPageNames[specPageIdx] + '] FULL page total: ' + (_tExtractEnd - _t0).toFixed(0) + 'ms');
+              console.log('[Keel Timing] [' + specsPageNames[specPageIdx] + '] EXTRACT_FLOORING_SPECS total: ' + (_tExtractEnd - _tExtractStart).toFixed(0) + 'ms');
+              console.log('[Keel Timing] [' + specsPageNames[specPageIdx] + '] FULL page total: ' + (_tExtractEnd - _t0).toFixed(0) + 'ms');
 
               if (extractRes && extractRes.ok && extractRes.result) {
                 var r = extractRes.result;
@@ -1302,14 +1302,19 @@
     var tkEstimateContainer = document.getElementById('tk-estimate-step-container');
     if (!tkEstimateContainer) return;
     tkEstimateContainer.innerHTML = `
-      <div id="tk-client-preview-step" class="tk-estimate-step" style="display: flex;">
+      <div id="tk-client-preview-step" class="tk-estimate-step" style="display: flex; flex-direction: column; gap: 8px;">
         <div class="tk-complete-icon">🖥️</div>
         <div class="tk-complete-msg">Estimate written! Start client preview?</div>
-        <button id="btn-tk-client-preview" class="btn-primary">Start Client Preview</button>
+        <div style="display:flex;gap:8px;width:100%;">
+          <button id="btn-tk-client-preview" class="btn-primary" style="flex:1;">Start Client Preview</button>
+          <button id="btn-tk-m1-client-preview" class="btn-secondary" style="flex:1;">Start M1 Client Preview</button>
+        </div>
       </div>
     `;
-    var btn = document.getElementById('btn-tk-client-preview');
-    if (btn) {
+
+    function wireCard(btnId, defaultLabel, flowFn) {
+      var btn = document.getElementById(btnId);
+      if (!btn) return;
       btn.addEventListener('click', async function () {
         btn.disabled = true;
         btn.textContent = 'Working…';
@@ -1320,9 +1325,8 @@
                  || tabs.find(function(t){ return t.url && t.url.includes('buildertrend'); });
           if (!tab) throw new Error('No BuilderTrend Estimate tab found.');
 
-          // Call runClientPreviewFlow directly with a label setter on the workflow button
-          if (typeof runClientPreviewFlow === 'function') {
-            await runClientPreviewFlow(
+          if (typeof flowFn === 'function') {
+            await flowFn(
               tab.id,
               function(msg) { console.log('[Workflow Preview]', msg); },
               function(label) { btn.textContent = label; }
@@ -1341,11 +1345,14 @@
           wf.seqStep = 3; wf.seqMaxStep = 3; updateSeqNav();
         } catch (e) {
           btn.disabled = false;
-          btn.textContent = 'Start Client Preview';
+          btn.textContent = defaultLabel;
           if (typeof showStatus === 'function') showStatus('Client Preview failed: ' + e.message, 'error', 8000);
         }
       });
     }
+
+    wireCard('btn-tk-client-preview', 'Start Client Preview', typeof runClientPreviewFlow === 'function' ? runClientPreviewFlow : null);
+    wireCard('btn-tk-m1-client-preview', 'Start M1 Client Preview', typeof runM1ClientPreviewFlow === 'function' ? runM1ClientPreviewFlow : null);
   }
 
   function updateSeqNav() {
@@ -1720,15 +1727,24 @@
       tkWriteEstimateBtn.textContent = 'Reading sheet…';
 
       try {
-        // Collect custom items (skip blank rows)
+        // Collect + validate custom items — each row needs BOTH a name and
+        // a price, or neither (a fully blank row is fine and simply skipped).
         var customItems = [];
+        var customRowError = null;
         document.querySelectorAll('#tk-custom-rows .tk-custom-row').forEach(function(row) {
           var nameEl  = row.querySelector('.tk-custom-name');
           var priceEl = row.querySelector('.tk-custom-price');
           var name  = nameEl  ? (nameEl.value  || '').trim() : '';
-          var price = priceEl ? parseFloat(priceEl.value) || 0 : 0;
-          if (name) customItems.push({ name: name, unitCost: price });
+          var priceRaw = priceEl ? (priceEl.value || '').trim() : '';
+          var price = parseFloat(priceRaw) || 0;
+          var hasName = name.length > 0;
+          var hasPrice = priceRaw.length > 0 && price > 0;
+          if (!hasName && !hasPrice) return;
+          if (hasName && !hasPrice) { customRowError = customRowError || ('Custom Selection Allowance "' + name + '" is missing a price.'); return; }
+          if (!hasName && hasPrice) { customRowError = customRowError || 'A Custom Selection Allowance row has a price but no name.'; return; }
+          customItems.push({ name: name, unitCost: price });
         });
+        if (customRowError) throw new Error(customRowError);
 
         // Read sheet cells (same as writeToEstimate in popup.js)
         var lender = document.getElementById('tk-chk-lender') && document.getElementById('tk-chk-lender').checked;
@@ -1828,7 +1844,7 @@
         }
 
         // Store in session and open tab picker
-        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems, pendingSiteOptions: siteOptions });
+        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems, pendingSiteOptions: siteOptions, pendingClientPreview: false, pendingSlowConnection: false });
         await chrome.windows.create({
           url: chrome.runtime.getURL('tabpicker.html'),
           type: 'popup', width: 560, height: 520
@@ -1860,6 +1876,90 @@
       if (!wf.active) runWorkflow();
     });
 
+    // ── Entry mode toggle: Guided Takeoff vs Start From a Base Plan ──────────
+    var entryGuidedBtn   = document.getElementById('btn-entry-guided');
+    var entryBaseplanBtn = document.getElementById('btn-entry-baseplan');
+    var tkIdleEl          = document.getElementById('tk-idle');
+    var tkBaseplanEl      = document.getElementById('tk-baseplan');
+    if (entryGuidedBtn && entryBaseplanBtn && tkIdleEl && tkBaseplanEl) {
+      entryGuidedBtn.addEventListener('click', function () {
+        entryGuidedBtn.classList.add('active');
+        entryBaseplanBtn.classList.remove('active');
+        tkIdleEl.classList.remove('hidden');
+        tkBaseplanEl.classList.add('hidden');
+      });
+      entryBaseplanBtn.addEventListener('click', function () {
+        entryBaseplanBtn.classList.add('active');
+        entryGuidedBtn.classList.remove('active');
+        tkBaseplanEl.classList.remove('hidden');
+        tkIdleEl.classList.add('hidden');
+      });
+    }
+
+    // ── "Start From a Base Plan" — Go button ─────────────────────────────────
+    var baseplanGoBtn = document.getElementById('btn-baseplan-go');
+    if (baseplanGoBtn) {
+      baseplanGoBtn.addEventListener('click', async function () {
+        var sel = document.getElementById('tk-baseplan-select');
+        var statusEl = document.getElementById('tk-baseplan-status');
+        var key = sel && sel.value;
+        if (!key) { if (statusEl) statusEl.textContent = 'Select a base plan first.'; return; }
+
+        baseplanGoBtn.disabled = true;
+        baseplanGoBtn.textContent = 'Loading plan…';
+        if (statusEl) statusEl.textContent = '';
+
+        try {
+          // Same tab-name convention and cell ranges as the EZEstimate
+          // webpage's base-plan loader — mirrors CELL_MAP in background.js.
+          var tabName = '2026 MASTER PLAN ' + key;
+          var areaKeys = ['basement', '1st floor', '2nd floor', '3rd floor', 'attic with storage', 'habitable attic', 'front porch', 'rear porch', 'rear deck', 'garage'];
+          var countKeys = ['# of exterior doors', '# of windows', '# of baths', 'cabinets lf', 'countertops lf', '# of staircases', '# of front porch columns', '# of garage doors', '# of interior doors', 'sf of carpet', 'sf of hardwood', 'sf of tile'];
+
+          var areaResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: tabName, range: 'I3:I12' });
+          var countResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: tabName, range: 'I18:I29' });
+
+          var values = {};
+          (areaResp.data || []).forEach(function (row, i) {
+            if (i >= areaKeys.length) return;
+            var v = parseFloat(String((row && row[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+            if (v > 0) values[areaKeys[i]] = v;
+          });
+          (countResp.data || []).forEach(function (row, i) {
+            if (i >= countKeys.length) return;
+            var v = parseFloat(String((row && row[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+            if (v > 0) values[countKeys[i]] = v;
+          });
+
+          if (!Object.keys(values).length) throw new Error('No values found for "' + key + '" — check the ' + tabName + ' tab.');
+
+          baseplanGoBtn.textContent = 'Writing to sheet…';
+          await writeValues(values);
+
+          // Same estimate step (site options / calculator / custom allowances /
+          // Write to Estimate) guided takeoff shows after its own sheet write —
+          // jump straight there, skipping the SquareTakeoff/OCR steps entirely.
+          document.getElementById('tk-entry-toggle').style.display = 'none';
+          tkBaseplanEl.classList.add('hidden');
+          tkIdleEl.classList.add('hidden');
+          var tkCompleteEl = document.getElementById('tk-complete');
+          if (tkCompleteEl) tkCompleteEl.classList.add('hidden');
+          var tkEstimateContainer = document.getElementById('tk-estimate-step-container');
+          if (tkEstimateContainer) {
+            tkEstimateContainer.innerHTML = buildEstimateStepHTML();
+            wireDynamicEstimateButton();
+          }
+          wf.allowEnterForEstimate = true;
+          wf.seqStep = 1; wf.seqMaxStep = Math.max(wf.seqMaxStep, 1); updateSeqNav();
+        } catch (e) {
+          if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+        } finally {
+          baseplanGoBtn.disabled = false;
+          baseplanGoBtn.textContent = 'Go →';
+        }
+      });
+    }
+
     var skipAllTakeoffsBtn = document.getElementById('btn-skip-all-takeoffs');
     if (skipAllTakeoffsBtn) skipAllTakeoffsBtn.addEventListener('click', function () {
       document.getElementById('tk-idle').classList.add('hidden');
@@ -1887,16 +1987,16 @@
       var debugObserver = new MutationObserver(function(mutations) {
         mutations.forEach(function(m) {
           if (m.type === 'childList' || m.type === 'characterData') {
-            console.log('[DUKE DEBUG] tk-estimate-step-container changed!');
-            console.log('[DUKE DEBUG] innerHTML now:', debugContainer.innerHTML.slice(0, 200));
-            console.log('[DUKE DEBUG] Stack trace:', new Error('mutation source').stack);
+            console.log('[KEEL DEBUG] tk-estimate-step-container changed!');
+            console.log('[KEEL DEBUG] innerHTML now:', debugContainer.innerHTML.slice(0, 200));
+            console.log('[KEEL DEBUG] Stack trace:', new Error('mutation source').stack);
           }
         });
       });
       debugObserver.observe(debugContainer, { childList: true, subtree: true, characterData: true });
-      console.log('[DUKE DEBUG] MutationObserver attached to tk-estimate-step-container');
+      console.log('[KEEL DEBUG] MutationObserver attached to tk-estimate-step-container');
     } else {
-      console.warn('[DUKE DEBUG] tk-estimate-step-container NOT FOUND in DOM!');
+      console.warn('[KEEL DEBUG] tk-estimate-step-container NOT FOUND in DOM!');
     }
     // ─────────────────────────────────────────────────────────────────────────
 

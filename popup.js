@@ -1,4 +1,4 @@
-// Duke Estimating - Popup Script (clean rewrite)
+// Keel EZ Estimate - Popup Script (clean rewrite)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ async function pass1Count(imgs, key) {
   const SYS = 'You are a construction estimator. Count exactly: # of exterior doors, # of windows, # of baths, # of staircases, # of front porch columns, # of garage doors, # of interior doors. Be specific and show your reasoning.\n\nDoor rules: one arc = 1 door. Two arcs same opening = 2 doors. Hand-drawn arcs count. Exterior = outer wall. Interior = between rooms. Garage overhead = separate category.\n\nAfter your reasoning end with this JSON on its own line:\n{"exterior_doors":N,"windows":N,"baths":N,"staircases":N,"porch_columns":N,"garage_doors":N,"interior_doors":N}';
   const content = [{ type: 'text', text: 'Count all elements. Show reasoning then give the JSON.' }].concat(buildImageContent(imgs));
   const text = await gptCall(key, SYS, content, 2000);
-  console.log('[Duke P1]', text);
+  console.log('[Keel P1]', text);
   const m = text.match(/\{"exterior_doors":\s*\d[^}]*\}/);
   if (!m) throw new Error('Count pass failed. Response: ' + text.slice(0, 300));
   return JSON.parse(m[0]);
@@ -103,7 +103,7 @@ async function pass2Locate(imgs, key, counts) {
   const SYS = 'You are annotating a floor plan. Verified counts: ' + summary + '.\n\nFor each element give the x,y location of EVERY instance as a percentage of the image (0,0=top-left, 100,100=bottom-right). Place each point directly ON the symbol itself.\n\nReturn ONLY valid JSON, no other text:\n{"exterior_doors":{"count":' + counts.exterior_doors + ',"locations":[]},"windows":{"count":' + counts.windows + ',"locations":[]},"baths":{"count":' + counts.baths + ',"locations":[]},"staircases":{"count":' + counts.staircases + ',"locations":[]},"porch_columns":{"count":' + counts.porch_columns + ',"locations":[]},"garage_doors":{"count":' + counts.garage_doors + ',"locations":[]},"interior_doors":{"count":' + counts.interior_doors + ',"locations":[]}}';
   const content = [{ type: 'text', text: 'Locate all ' + summary + '. Return JSON.' }].concat(buildImageContent(imgs));
   const text = await gptCall(key, SYS, content, 4096);
-  console.log('[Duke P2]', text.slice(0, 150));
+  console.log('[Keel P2]', text.slice(0, 150));
   const clean = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
   const m = clean.match(/\{[\s\S]*\}/);
   if (!m) throw new Error('Location pass failed. Response: ' + text.slice(0, 200));
@@ -167,7 +167,7 @@ async function buildFewShotMessages() {
       },
     ];
   } catch (e) {
-    console.warn('[Duke] Could not load training images:', e.message);
+    console.warn('[Keel] Could not load training images:', e.message);
     return []; // fall back to no few-shot if images fail to load
   }
 }
@@ -307,7 +307,7 @@ async function loadSymbolReferences() {
       msgs.push({ type: 'text',      text: f.caption });
       msgs.push({ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b64, detail: 'low' } });
     } catch (e) {
-      console.warn('[Duke] Could not load symbol image:', f.file, e.message);
+      console.warn('[Keel] Could not load symbol image:', f.file, e.message);
     }
   }
   _symbolCache = msgs;
@@ -349,7 +349,7 @@ async function runOnce(imagesBase64, openaiKey) {
   }
   const data = await res.json();
   const text = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
-  console.log('[Duke GPT]', text.slice(0, 500));
+  console.log('[Keel GPT]', text.slice(0, 500));
   lastReasoning = text; // store full response for display
 
   const clean = text.replace(/```(?:json)?/gi, '').replace(/```/g, '');
@@ -609,9 +609,9 @@ async function runSplitPass(imagesBase64, openaiKey, model, claudeKey, geminiKey
     callFocused(OTHERS_PASS_PROMPT, extDoorRefs.concat(othersRefs)),
   ]);
 
-  console.log('[Duke windows pass]', winText.slice(0, 200));
-  console.log('[Duke doors pass]', doorsText.slice(0, 200));
-  console.log('[Duke others pass]', othersText.slice(0, 200));
+  console.log('[Keel windows pass]', winText.slice(0, 200));
+  console.log('[Keel doors pass]', doorsText.slice(0, 200));
+  console.log('[Keel others pass]', othersText.slice(0, 200));
   lastReasoning = 'WINDOWS PASS:\n' + winText + '\n\nINTERIOR DOORS PASS:\n' + doorsText + '\n\nOTHERS PASS:\n' + othersText;
 
   const win    = parseJSON(winText);
@@ -643,7 +643,7 @@ async function callGPT4oFromPanel(imagesBase64, openaiKey, useVoting, model, cla
   const results = [];
   for (let i = 0; i < RUNS; i++) {
     try { results.push(await runSplitPass(imagesBase64, openaiKey, model, claudeKey, geminiKey)); }
-    catch (e) { console.warn('[Duke vote ' + i + ' failed]', e.message); }
+    catch (e) { console.warn('[Keel vote ' + i + ' failed]', e.message); }
   }
   if (!results.length) throw new Error('All analysis attempts failed.');
 
@@ -655,7 +655,7 @@ async function callGPT4oFromPanel(imagesBase64, openaiKey, useVoting, model, cla
     const bestRun = results.find(function(r) { return r[k] && r[k].count === median; }) || results[0];
     consensus[k] = { count: median, locations: (bestRun[k] && bestRun[k].locations) || [] };
   });
-  console.log('[Duke consensus]', JSON.stringify(consensus).slice(0, 200));
+  console.log('[Keel consensus]', JSON.stringify(consensus).slice(0, 200));
   return consensus;
 }
 
@@ -1231,7 +1231,7 @@ async function grabTakeoff() {
     try {
       const probe = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: function () { return !!window.__dukeListenerRegistered; }
+        func: function () { return !!window.__keelListenerRegistered; }
       });
       if (!probe[0]?.result) {
         await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
@@ -1260,26 +1260,19 @@ async function grabTakeoff() {
 }
 
 // ── Write to Estimate ─────────────────────────────────────────────────────────
-
-let _writeTabId = null;
-
-function stopWrite() {
-  if (_writeTabId) {
-    chrome.scripting.executeScript({
-      target: { tabId: _writeTabId },
-      func: function() { window.__dukeWriteStop = true; }
-    }).catch(function(){});
-  }
-}
+// Gathers items/site-options/custom-allowances from this panel's own DOM,
+// then hands off to tabpicker.html — the same tab-picker + write flow used
+// by the guided-takeoff button, the base-plan flow, and the webpage, so
+// there's exactly one write implementation to keep in sync (see tabpicker.js).
+// The Stop control for an in-progress write now lives in tabpicker.html.
 
 async function writeToEstimate() {
   const btn = $('btn-write-estimate');
-  const stopBtn = $('btn-stop-write');
   const logEl = $('estimate-log');
   btn.disabled = true; btn.textContent = 'Working…';
-  if (stopBtn) { stopBtn.style.display = 'inline-block'; }
   logEl.textContent = ''; logEl.classList.remove('hidden');
   const lender = $('chk-lender') && $('chk-lender').checked;
+  const slowConnection = !!($('chk-slow-connection') && $('chk-slow-connection').checked);
 
   function log(msg) {
     logEl.textContent += msg + '\n';
@@ -1384,692 +1377,46 @@ async function writeToEstimate() {
       });
     }
 
-    // Read custom selection allowances from static Write to Estimate panel
+    // Read + validate custom selection allowances from static Write to
+    // Estimate panel — each row needs BOTH a name and a price, or neither
+    // (a fully blank row is fine and simply skipped).
     const customItems = [];
+    let customRowError = null;
     document.querySelectorAll('#ext-custom-rows .ext-custom-row').forEach(function(row) {
-      const name  = (row.querySelector('.ext-custom-name')  || {}).value || '';
-      const price = parseFloat((row.querySelector('.ext-custom-price') || {}).value || '0') || 0;
-      if (name.trim() && price > 0) customItems.push({ name: name.trim(), unitCost: price });
+      const name = ((row.querySelector('.ext-custom-name') || {}).value || '').trim();
+      const priceRaw = ((row.querySelector('.ext-custom-price') || {}).value || '').trim();
+      const price = parseFloat(priceRaw) || 0;
+      const hasName = name.length > 0;
+      const hasPrice = priceRaw.length > 0 && price > 0;
+      if (!hasName && !hasPrice) return;
+      if (hasName && !hasPrice) { customRowError = customRowError || ('Custom Selection Allowance "' + name + '" is missing a price.'); return; }
+      if (!hasName && hasPrice) { customRowError = customRowError || 'A Custom Selection Allowance row has a price but no name.'; return; }
+      customItems.push({ name: name, unitCost: price });
     });
+    if (customRowError) throw new Error(customRowError);
 
-    log('Found ' + items.length + ' items to write. Opening BuilderTrend…');
-
-    const tabs = await chrome.tabs.query({});
-    const tab = tabs.find(function(t) { return t.url && t.url.includes('buildertrend') && t.url.toLowerCase().includes('estimate'); })
-             || tabs.find(function(t) { return t.url && t.url.includes('buildertrend'); });
-    if (!tab) throw new Error('No BuilderTrend Estimate tab found. Open buildertrend.net/app/Estimate.');
-
-    await chrome.tabs.update(tab.id, { active: true });
-    await chrome.windows.update(tab.windowId, { focused: true });
-    await new Promise(function(r) { setTimeout(r, 400); });
-
-    _writeTabId = tab.id;
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: function() { window.__dukeWriteStop = false; }
-    }).catch(function(){});
-
-    const result = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: async function(itemsList, siteOptionsList, customItemsList) { try {
-        var _log = [];
-        var _delay = function(ms) { return new Promise(function(r) { setTimeout(r, ms); }); };
-
-        function reactSet(input, val) {
-          var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          setter.call(input, String(val));
-          input.dispatchEvent(new Event('input',  { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        // Finds the worksheet search bar by walking up from the "Collapse all" button —
-        // never relies on rc_select_* IDs which change whenever BT re-renders form elements.
-        function findWorksheetSearchBar() {
-          var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
-            return (b.textContent || '').includes('Collapse all');
-          });
-          if (collapseBtn) {
-            var el = collapseBtn;
-            while (el && el !== document.body) {
-              var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
-              if (inp) return inp;
-              el = el.parentElement;
-            }
-          }
-          // Fallback: legacy IDs
-          return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
-        }
-
-        async function setQty(name, qty, isUnitCost) {
-          var needle = name.toLowerCase();
-          var words = needle.split(/\s+/).filter(Boolean);
-          var startTime = performance.now();
-          var stepStartTime = startTime;
-
-          function logTiming(label) {
-            var elapsed = performance.now() - stepStartTime;
-            console.log('[TIMING] ' + label + ' — ' + elapsed.toFixed(0) + 'ms');
-            stepStartTime = performance.now();
-          }
-
-          // Smart wait: detect when modal closes instead of blind waiting
-          function waitForModalClose(maxWaitMs) {
-            maxWaitMs = maxWaitMs || 2000;
-            return new Promise(function(resolve) {
-              var startWait = performance.now();
-              var checkInterval = setInterval(function() {
-                var modal = document.querySelector('.ant-modal-wrap, .ant-modal-root, [class*="modal"][class*="show"]');
-                var elapsed = performance.now() - startWait;
-
-                if (!modal || elapsed >= maxWaitMs) {
-                  clearInterval(checkInterval);
-                  resolve(elapsed);
-                }
-              }, 50); // Check every 50ms
-            });
-          }
-
-          // 1. Focus the correct Ant Design Select search input (line items search)
-          var si = null;
-          for (var wi = 0; wi < 20; wi++) {
-            si = findWorksheetSearchBar();
-            if (si) break;
-            await _delay(100);
-          }
-          logTiming('Found search bar (retries)');
-          if (!si) { _log.push('✗ ' + name + ' — search bar not found'); return; }
-
-          // Click the parent .ant-select-selector container to open the dropdown first
-          var container = si.closest('.ant-select-selector') || si.parentElement;
-          if (container) { container.click(); await _delay(200); }
-
-          si.focus();
-          await _delay(100);
-
-          // Type the name to filter — use nativeSetter so React picks up the change
-          var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          nativeSetter.call(si, name);
-          si.dispatchEvent(new Event('input',  { bubbles: true }));
-          si.dispatchEvent(new Event('change', { bubbles: true }));
-          stepStartTime = performance.now();
-          await _delay(500);
-          logTiming('Waited for dropdown after typing name (500ms)');
-
-          // 2. Click the matching LineItem result (skip Group results)
-          var opts = document.querySelectorAll('.LineItemResult.LineItem');
-          var clicked = false;
-          for (var o = 0; o < opts.length; o++) {
-            var optTxt = (opts[o].innerText || '').trim().toLowerCase();
-            if (words.every(function(w){ return optTxt.includes(w); })) {
-              opts[o].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-              opts[o].dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
-              opts[o].click();
-              clicked = true;
-              break;
-            }
-          }
-          if (!clicked) { _log.push('○ ' + name + ' — not in dropdown'); return; }
-
-          // 3. Find the ValueDisplay whose text matches the item name, skipping group header rows
-          // Retry up to 15 times (1.5s total) to handle virtual scroll rendering delay
-          var el = null;
-
-          function isInGroupHeader(node) {
-            var ownCls = node.className || '';
-            if (ownCls.includes('proposalFormatGroupCellTitle') || ownCls.includes('proposalFormatGroupCellTitleReadonly')) return true;
-            var n = node.parentElement;
-            while (n && n !== document.body) {
-              var c = n.className || '';
-              if (c.includes('WorksheetGroupCellActions') || c.includes('proposalFormatGroupCell')) return true;
-              n = n.parentElement;
-            }
-            return false;
-          }
-
-          function findValueDisplay() {
-            var vds = document.querySelectorAll('.ValueDisplay');
-            // Pass 1: exact match
-            for (var v = 0; v < vds.length; v++) {
-              if (!vds[v].offsetHeight || isInGroupHeader(vds[v])) continue;
-              if ((vds[v].innerText || '').trim().toLowerCase() === needle) return vds[v];
-            }
-            // Pass 2: word match
-            for (var v2 = 0; v2 < vds.length; v2++) {
-              if (!vds[v2].offsetHeight || isInGroupHeader(vds[v2])) continue;
-              var t = (vds[v2].innerText || '').trim().toLowerCase();
-              if (words.every(function(w) { return t.includes(w); })) return vds[v2];
-            }
-            return null;
-          }
-
-          // Retry up to 15x (100ms each) to handle virtual scroll rendering delay
-          stepStartTime = performance.now();
-          for (var attempt = 0; attempt < 15; attempt++) {
-            el = findValueDisplay();
-            if (el) break;
-            await _delay(100);
-          }
-          logTiming('Found ValueDisplay (retries: ' + attempt + ')');
-          if (!el) { _log.push('○ ' + name + ' — ValueDisplay not found'); return; }
-
-          // 4. Click the ValueDisplay to open the qty/cost popup
-          el.scrollIntoView({ behavior: 'instant', block: 'center' });
-          await _delay(300);
-          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
-          el.click();
-          stepStartTime = performance.now();
-          await _delay(400);
-          logTiming('Waited for popup after clicking ValueDisplay (400ms)');
-
-          // 5. Find the input — unit cost field for Realtor Fees, qty spinbutton for everything else
-          stepStartTime = performance.now();
-          var qtyInput = null;
-          if (isUnitCost) {
-            qtyInput = document.querySelector('input[data-testid="unitCost"], input#unitCost');
-          }
-          if (!qtyInput) {
-            qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
-                    || document.querySelector('input[role="spinbutton"]')
-                    || document.querySelector('input.ant-input-number-input');
-          }
-          logTiming('Found qty input');
-          if (!qtyInput) { _log.push('○ ' + name + ' — qty input not found (popup may not have opened)'); return; }
-
-          // 6. Focus, clear, then type each character so React state updates properly
-          qtyInput.focus();
-          await _delay(150);
-
-          // Select all and delete existing value
-          qtyInput.select();
-          qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, ctrlKey: true, bubbles: true }));
-          await _delay(50);
-          qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', keyCode: 46, bubbles: true }));
-          reactSet(qtyInput, '');
-          qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
-          await _delay(100);
-
-          // Type each character of the value — round to 2 decimal places
-          var roundedQty = Math.round(qty * 100) / 100;
-          var valStr = String(roundedQty);
-          var setter2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          stepStartTime = performance.now();
-          for (var ci = 0; ci < valStr.length; ci++) {
-            var ch = valStr[ci];
-            var code = ch.charCodeAt(0);
-            qtyInput.dispatchEvent(new KeyboardEvent('keydown',  { key: ch, keyCode: code, bubbles: true }));
-            qtyInput.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, bubbles: true }));
-            setter2.call(qtyInput, valStr.slice(0, ci + 1));
-            qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
-            qtyInput.dispatchEvent(new KeyboardEvent('keyup',    { key: ch, keyCode: code, bubbles: true }));
-            await _delay(20);
-          }
-          await _delay(200);
-          logTiming('Typed ' + valStr.length + ' characters (40ms each)');
-
-          // 7. Click the Save button to persist the value
-          stepStartTime = performance.now();
-          var saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
-          if (!saveBtn) {
-            // Wait up to 1.5s for it to appear
-            for (var s = 0; s < 15; s++) {
-              await _delay(100);
-              saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
-              if (saveBtn) break;
-            }
-          }
-          logTiming('Found save button');
-          if (saveBtn) {
-            saveBtn.click();
-            stepStartTime = performance.now();
-            var actualWait = await waitForModalClose(2000);
-            logTiming('Smart wait: modal closed (' + actualWait.toFixed(0) + 'ms)');
-          } else {
-            // Fallback: Enter to submit
-            qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-            stepStartTime = performance.now();
-            await _delay(500);
-            logTiming('Fallback: Enter submit (500ms)');
-          }
-
-          var totalTime = performance.now() - startTime;
-          console.log('[TIMING] TOTAL for ' + name + ': ' + totalTime.toFixed(0) + 'ms');
-          _log.push('✓ ' + name + ' → ' + qty + (isUnitCost ? ' (unit cost)' : ' (qty)') + ' (' + totalTime.toFixed(0) + 'ms)');
-        }
-
-        async function createLineItem(title, unitCost) {
-          var nsL = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var siL = findWorksheetSearchBar();
-          if (siL) {
-            var contL = siL.closest('.ant-select-selector') || siL.parentElement;
-            if (contL) { contL.click(); await _delay(200); }
-            siL.focus(); await _delay(100);
-            nsL.call(siL, 'Custom Selection Allowances');
-            siL.dispatchEvent(new Event('input',{bubbles:true}));
-            siL.dispatchEvent(new Event('change',{bubbles:true}));
-            await _delay(900);
-            var liResult = null;
-            var liBTags = document.querySelectorAll('b');
-            for (var lbi=0; lbi<liBTags.length; lbi++) {
-              if ((liBTags[lbi].textContent||'').trim().toLowerCase() === 'custom selection allowances') { liResult = liBTags[lbi]; break; }
-            }
-            if (!liResult) {
-              var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-              for (var lii=0; lii<liItems.length; lii++) {
-                if ((liItems[lii].innerText||'').toLowerCase().includes('custom selection allowances')) { liResult = liItems[lii]; break; }
-              }
-            }
-            if (liResult) {
-              var liClick = liResult.closest('.LineItemResult') || liResult.closest('[class*="Result"]') || liResult;
-              liClick.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-              liClick.click(); await _delay(700);
-            }
-          }
-          var plusBtnL = null;
-          for (var lwi=0; lwi<20; lwi++) {
-            var lrows = document.querySelectorAll('.WorksheetGroupCellActions');
-            for (var lri=0; lri<lrows.length; lri++) {
-              var ltitleEl = lrows[lri].querySelector('.proposalFormatGroupCellTitle');
-              if (ltitleEl && (ltitleEl.innerText||'').trim().toLowerCase() === 'custom selection allowances') {
-                var lcand = lrows[lri].querySelector('button.AddItemsDropdown');
-                if (lcand) { plusBtnL = lcand; break; }
-              }
-            }
-            if (plusBtnL) break;
-            await _delay(150);
-          }
-          if (!plusBtnL) { _log.push('✗ createLineItem: + button not found'); return; }
-          plusBtnL.scrollIntoView({ behavior:'instant', block:'center' }); await _delay(300);
-          var existingIdsL = new Set(Array.from(document.querySelectorAll('[data-testid*="itemTitle"]')).map(function(e){ return e.id; }));
-          plusBtnL.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          plusBtnL.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
-          plusBtnL.click(); await _delay(600);
-          var itemOptL = null;
-          for (var lwi2=0; lwi2<15; lwi2++) {
-            var lopts = document.querySelectorAll('.ant-dropdown-menu-title-content');
-            for (var loi=0; loi<lopts.length; loi++) {
-              if ((lopts[loi].textContent||'').trim() === 'Item') { itemOptL = lopts[loi]; break; }
-            }
-            if (itemOptL) break; await _delay(100);
-          }
-          if (!itemOptL) { _log.push('✗ createLineItem: Item option not found'); return; }
-          itemOptL.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          itemOptL.click(); await _delay(600);
-          if (siL) { nsL.call(siL, ''); siL.dispatchEvent(new Event('input',{bubbles:true})); siL.dispatchEvent(new Event('change',{bubbles:true})); await _delay(600); }
-          var newTitleElL = null;
-          for (var la=0; la<30; la++) {
-            var editRowL = document.querySelector('tr.editing');
-            if (editRowL) { newTitleElL = editRowL.querySelector('input[id*="itemTitle"], [data-testid*="itemTitle"]'); if (newTitleElL) break; }
-            var allTitlesL = document.querySelectorAll('[data-testid*="itemTitle"], input[id*="itemTitle"]');
-            for (var ltt=0; ltt<allTitlesL.length; ltt++) { if (!existingIdsL.has(allTitlesL[ltt].id)) { newTitleElL = allTitlesL[ltt]; break; } }
-            if (newTitleElL) break; await _delay(150);
-          }
-          if (!newTitleElL) { _log.push('✗ createLineItem: new title input not found'); return; }
-          newTitleElL.scrollIntoView({ behavior:'instant', block:'center' });
-          newTitleElL.focus(); await _delay(150); newTitleElL.select();
-          nsL.call(newTitleElL, title);
-          newTitleElL.dispatchEvent(new Event('input',{bubbles:true}));
-          newTitleElL.dispatchEvent(new Event('change',{bubbles:true})); await _delay(300);
-          var keyBaseL = (newTitleElL.getAttribute('data-testid') || newTitleElL.id || '').replace(/\.itemTitle$/, '');
-          var ccInputL = document.querySelector('[id="' + keyBaseL + '.costCodeId"]');
-          if (ccInputL) {
-            var ccWrapL = ccInputL.closest('.ant-select') || ccInputL.parentElement;
-            if (ccWrapL) { ccWrapL.click(); await _delay(300); }
-            ccInputL.focus(); await _delay(100);
-            nsL.call(ccInputL, 'Custom Selection Allowances');
-            ccInputL.dispatchEvent(new Event('input',{bubbles:true})); ccInputL.dispatchEvent(new Event('change',{bubbles:true})); await _delay(800);
-            var ccOptL = null;
-            var allCcOptsL = document.querySelectorAll('.ant-select-item-option-content');
-            for (var lco=0; lco<allCcOptsL.length; lco++) { if ((allCcOptsL[lco].textContent||'').trim() === 'Custom Selection Allowances') { ccOptL = allCcOptsL[lco]; break; } }
-            if (ccOptL) { ccOptL.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); ccOptL.click(); await _delay(400); }
-            else { _log.push('⚠ createLineItem: cost code option not found — continuing'); }
-          }
-          var pgInputL = document.getElementById('parentId');
-          if (pgInputL) {
-            var pgWrapL = pgInputL.closest('.ant-select') || pgInputL.parentElement;
-            if (pgWrapL) { pgWrapL.click(); await _delay(300); }
-            pgInputL.focus(); await _delay(100);
-            nsL.call(pgInputL, 'Custom Selection Allowances');
-            pgInputL.dispatchEvent(new Event('input',{bubbles:true})); pgInputL.dispatchEvent(new Event('change',{bubbles:true})); await _delay(600);
-            var pgOptsL = document.querySelectorAll('.ant-select-item-option-content');
-            var pgOptL = null;
-            for (var lpo=0; lpo<pgOptsL.length; lpo++) { if ((pgOptsL[lpo].textContent||'').trim() === 'Custom Selection Allowances') { pgOptL = pgOptsL[lpo]; break; } }
-            if (pgOptL) { pgOptL.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); pgOptL.click(); await _delay(400); }
-            else { _log.push('⚠ createLineItem: parent group option not found — continuing'); }
-          }
-          var ucInputL = document.querySelector('[data-testid="' + keyBaseL + '.unitCost"]') || document.querySelector('[id="' + keyBaseL + '.unitCost"]');
-          if (ucInputL) {
-            ucInputL.focus(); await _delay(150); ucInputL.select();
-            nsL.call(ucInputL, ''); ucInputL.dispatchEvent(new Event('input',{bubbles:true})); await _delay(50);
-            nsL.call(ucInputL, String(Math.round(parseFloat(unitCost) * 100) / 100));
-            ucInputL.dispatchEvent(new Event('input',{bubbles:true})); ucInputL.dispatchEvent(new Event('change',{bubbles:true})); await _delay(200);
-          } else { _log.push('⚠ createLineItem: unit cost input not found — continuing'); }
-          var sideElL = document.querySelector('.ant-layout-sider, aside');
-          var saveXL = sideElL ? sideElL.getBoundingClientRect().right + 5 : 10;
-          var saveYL = window.innerHeight / 2;
-          var saveTargetL = document.elementFromPoint(saveXL, saveYL) || document.body;
-          saveTargetL.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXL,clientY:saveYL})); await _delay(150);
-          saveTargetL.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXL,clientY:saveYL})); await _delay(900);
-          _log.push('✓ Created: ' + title + ' → $' + unitCost);
-        }
-
-        async function createSiteItem(title, parentGroup, unitCost) {
-          _log.push('▶ createSiteItem start: "' + title + '" parentGroup="' + parentGroup + '"');
-          var ns2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var si = findWorksheetSearchBar();
-          _log.push('  search bar: ' + (si ? 'found id=' + si.id : 'NOT FOUND'));
-          if (si) {
-            var cont2 = si.closest('.ant-select-selector') || si.parentElement;
-            if (cont2) { cont2.click(); await _delay(200); }
-            si.focus(); await _delay(100);
-            ns2.call(si, 'Site Allowances');
-            si.dispatchEvent(new Event('input',{bubbles:true}));
-            si.dispatchEvent(new Event('change',{bubbles:true}));
-            await _delay(900);
-            var siResult = null;
-            var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-            _log.push('  search results found: ' + liItems.length + ' — texts: [' + Array.from(liItems).slice(0,5).map(function(el){ return '"' + (el.innerText||'').trim() + '"'; }).join(', ') + ']');
-            for (var li=0; li<liItems.length; li++) {
-              if ((liItems[li].innerText||'').trim().toLowerCase() === 'site allowances') { siResult = liItems[li]; break; }
-            }
-            _log.push('  "site allowances" result: ' + (siResult ? 'FOUND — clicking' : 'NOT FOUND'));
-            if (siResult) { siResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); siResult.click(); await _delay(700); }
-          }
-          var plusBtn = null;
-          var groupRowTitles = [];
-          for (var siat=0; siat<20; siat++) {
-            var siRows = document.querySelectorAll('.WorksheetGroupCellActions');
-            groupRowTitles = Array.from(siRows).map(function(r){ var t=r.querySelector('.proposalFormatGroupCellTitle'); return t ? (t.innerText||'').trim() : '(no title)'; });
-            for (var siri=0; siri<siRows.length; siri++) {
-              var siTitleEl = siRows[siri].querySelector('.proposalFormatGroupCellTitle');
-              if (siTitleEl && (siTitleEl.innerText||'').trim().toLowerCase() === 'site allowances') {
-                // Trigger hover so BT renders the + button (it's only visible on mouseenter)
-                siRows[siri].dispatchEvent(new MouseEvent('mouseenter', {bubbles:true}));
-                siRows[siri].dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
-                await _delay(200);
-                // Only look WITHIN this exact row — no parentElement fallback (that finds wrong group's button)
-                var siCandidate = siRows[siri].querySelector('button.AddItemsDropdown');
-                _log.push('  Site Allowances row found, + button: ' + (siCandidate ? 'FOUND' : 'NOT FOUND (hover triggered)'));
-                if (siCandidate) { plusBtn = siCandidate; break; }
-              }
-            }
-            if (plusBtn) break;
-            await _delay(150);
-          }
-          _log.push('  group rows in DOM: [' + groupRowTitles.join(', ') + ']');
-          _log.push('  plusBtn: ' + (plusBtn ? 'FOUND' : 'NOT FOUND'));
-          if (!plusBtn) { _log.push('✗ createSiteItem: + button not found for Site Allowances'); return; }
-          plusBtn.scrollIntoView({ behavior:'instant', block:'center' });
-          await _delay(300);
-          var plusBtnGroupTitle = (function() { var r = plusBtn.closest('.WorksheetGroupCellActions') || (plusBtn.parentElement && plusBtn.parentElement.closest('.WorksheetGroupCellActions')); if (!r) return '(unknown)'; var t = r.querySelector('.proposalFormatGroupCellTitle'); return t ? (t.innerText||'').trim() : '(no title)'; })();
-          _log.push('  clicking + under group: "' + plusBtnGroupTitle + '"');
-          var siExistingIds = new Set(Array.from(document.querySelectorAll('[data-testid*="itemTitle"]')).map(function(e){ return e.id; }));
-          plusBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          plusBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
-          plusBtn.click();
-          await _delay(400);
-          var itemOpt = null;
-          for (var iat=0; iat<15; iat++) {
-            var opts = document.querySelectorAll('.ant-dropdown-menu-title-content');
-            for (var oi=0; oi<opts.length; oi++) {
-              if ((opts[oi].textContent||'').trim() === 'Item') { itemOpt = opts[oi]; break; }
-            }
-            if (itemOpt) break;
-            await _delay(100);
-          }
-          if (!itemOpt) { _log.push('✗ createSiteItem: Item option not found'); return; }
-          itemOpt.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          itemOpt.click();
-          await _delay(600);
-          if (si) { ns2.call(si, ''); si.dispatchEvent(new Event('input',{bubbles:true})); si.dispatchEvent(new Event('change',{bubbles:true})); await _delay(600); }
-          var newTitleEl = null;
-          for (var tat=0; tat<30; tat++) {
-            var editRow = document.querySelector('tr.editing');
-            if (editRow) { newTitleEl = editRow.querySelector('input[id*="itemTitle"], [data-testid*="itemTitle"]'); if (newTitleEl) break; }
-            var allTitleInps = document.querySelectorAll('[data-testid*="itemTitle"], input[id*="itemTitle"]');
-            for (var tt=0; tt<allTitleInps.length; tt++) { if (!siExistingIds.has(allTitleInps[tt].id)) { newTitleEl = allTitleInps[tt]; break; } }
-            if (newTitleEl) break;
-            await _delay(150);
-          }
-          if (!newTitleEl) { _log.push('✗ createSiteItem: title input not found'); return; }
-          newTitleEl.scrollIntoView({ behavior:'instant', block:'center' });
-          newTitleEl.focus(); await _delay(150);
-          ns2.call(newTitleEl, title);
-          newTitleEl.dispatchEvent(new Event('input',{bubbles:true}));
-          newTitleEl.dispatchEvent(new Event('change',{bubbles:true}));
-          await _delay(300);
-          var keyBase = (newTitleEl.getAttribute('data-testid') || newTitleEl.id || '').replace(/\.itemTitle$/, '');
-          var ccInput = document.querySelector('[id="' + keyBase + '.costCodeId"]');
-          if (ccInput) {
-            var ccWrap = ccInput.closest('.ant-select') || ccInput.parentElement;
-            if (ccWrap) { ccWrap.click(); await _delay(400); }
-            ccInput.focus(); await _delay(200);
-            document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
-            document.execCommand('insertText', false, parentGroup);
-            await _delay(1200);
-            var ccOpt = null;
-            var allCcOpts = document.querySelectorAll('.ant-select-item-option-content');
-            for (var co=0; co<allCcOpts.length; co++) { if ((allCcOpts[co].textContent||'').trim() === parentGroup) { ccOpt = allCcOpts[co]; break; } }
-            if (!ccOpt) {
-              document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
-              document.execCommand('insertText', false, '09 - Lot Clearing');
-              await _delay(1200);
-              allCcOpts = document.querySelectorAll('.ant-select-item-option-content');
-              for (var co2=0; co2<allCcOpts.length; co2++) { if ((allCcOpts[co2].textContent||'').trim() === '09 - Lot Clearing/Site Prep') { ccOpt = allCcOpts[co2]; break; } }
-            }
-            if (ccOpt) {
-              var ccOptParent = ccOpt.closest('.ant-select-item-option') || ccOpt.parentElement;
-              ccOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true})); await _delay(80);
-              ccOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-              ccOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-              await _delay(600); _log.push('✓ createSiteItem: cost code set');
-            } else { _log.push('⚠ createSiteItem: cost code option not found — continuing'); }
-          } else { _log.push('⚠ createSiteItem: cost code input not found'); }
-          var pgInput = null;
-          for (var pgwait=0; pgwait<20; pgwait++) { pgInput = document.getElementById('parentId'); if (pgInput) break; await _delay(200); }
-          if (pgInput) {
-            var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
-            if (pgWrap) { pgWrap.click(); await _delay(400); }
-            pgInput.focus(); await _delay(200);
-            document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); await _delay(100);
-            document.execCommand('insertText', false, 'Site Allowances');
-            await _delay(1000);
-            var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
-            var pgOpt = null;
-            for (var po=0; po<pgOpts.length; po++) { if ((pgOpts[po].textContent||'').trim() === 'Site Allowances') { pgOpt = pgOpts[po]; break; } }
-            if (pgOpt) {
-              var pgOptParent = pgOpt.closest('.ant-select-item-option') || pgOpt.parentElement;
-              pgOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true})); await _delay(80);
-              pgOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-              pgOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-              await _delay(500); _log.push('✓ createSiteItem: parent group set to Site Allowances');
-            } else { _log.push('⚠ createSiteItem: parent group "Site Allowances" not found — continuing'); }
-          } else { _log.push('⚠ createSiteItem: parentId input not found'); }
-          if (unitCost && parseFloat(unitCost) > 0) {
-            var ucInput = document.querySelector('[data-testid="' + keyBase + '.unitCost"]') || document.querySelector('[id="' + keyBase + '.unitCost"]');
-            if (ucInput) {
-              ucInput.focus(); await _delay(150); ucInput.select();
-              ns2.call(ucInput, ''); ucInput.dispatchEvent(new Event('input',{bubbles:true})); await _delay(50);
-              ns2.call(ucInput, String(Math.round(parseFloat(unitCost) * 100) / 100));
-              ucInput.dispatchEvent(new Event('input',{bubbles:true})); ucInput.dispatchEvent(new Event('change',{bubbles:true})); await _delay(200);
-            } else { _log.push('⚠ createSiteItem: unit cost input not found'); }
-          }
-          var sideElSi = document.querySelector('.ant-layout-sider, aside');
-          var saveXSi = sideElSi ? sideElSi.getBoundingClientRect().right + 5 : 10;
-          var saveYSi = window.innerHeight / 2;
-          var saveTargetSi = document.elementFromPoint(saveXSi, saveYSi) || document.body;
-          saveTargetSi.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXSi,clientY:saveYSi})); await _delay(150);
-          saveTargetSi.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXSi,clientY:saveYSi})); await _delay(900);
-          _log.push('✓ Site item: ' + title + ' → ' + parentGroup + (unitCost ? ' → $' + unitCost : ''));
-        }
-
-        async function editExistingItem(searchName, newTitle, unitCost) {
-          var nsE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          var siE = findWorksheetSearchBar();
-          if (siE) {
-            var contE = siE.closest('.ant-select-selector') || siE.parentElement;
-            if (contE) { contE.click(); await _delay(200); }
-            siE.focus(); await _delay(100);
-            nsE.call(siE, searchName);
-            siE.dispatchEvent(new Event('input',{bubbles:true}));
-            siE.dispatchEvent(new Event('change',{bubbles:true}));
-            await _delay(900);
-            var eResult = null;
-            var eItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-            for (var eli=0; eli<eItems.length; eli++) {
-              if ((eItems[eli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { eResult = eItems[eli]; break; }
-            }
-            if (eResult) { eResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); eResult.click(); await _delay(1000); }
-            nsE.call(siE, ''); siE.dispatchEvent(new Event('input',{bubbles:true})); siE.dispatchEvent(new Event('change',{bubbles:true})); await _delay(400);
-          }
-          var targetRow = null;
-          for (var tdi=0; tdi<20; tdi++) {
-            var bTags = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
-            for (var tdi2=0; tdi2<bTags.length; tdi2++) {
-              if ((bTags[tdi2].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-                targetRow = bTags[tdi2].closest('tr.proposalBaseLineItemContainerRow'); break;
-              }
-            }
-            if (targetRow) break;
-            await _delay(150);
-          }
-          if (!targetRow) { _log.push('⚠ editExistingItem: row not found for ' + searchName); return; }
-          targetRow.click(); await _delay(800);
-          var titleDisplay = null;
-          for (var tdd=0; tdd<15; tdd++) {
-            var tDisplays = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
-            for (var tdi3=0; tdi3<tDisplays.length; tdi3++) {
-              if ((tDisplays[tdi3].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) { titleDisplay = tDisplays[tdi3]; break; }
-            }
-            if (titleDisplay) break;
-            await _delay(100);
-          }
-          if (titleDisplay) { titleDisplay.click(); await _delay(400); }
-          else { _log.push('⚠ editExistingItem: title ValueDisplay not found for ' + searchName); }
-          var titleInp = null;
-          for (var tii=0; tii<15; tii++) { titleInp = document.querySelector('input[data-testid="itemTitle"]'); if (titleInp) break; await _delay(100); }
-          if (titleInp) {
-            titleInp.focus();
-            document.execCommand('selectAll', false, null); document.execCommand('delete', false, null);
-            document.execCommand('insertText', false, newTitle);
-            await _delay(300);
-          } else { _log.push('⚠ editExistingItem: title input did not appear for ' + searchName); }
-          var costCell = targetRow.querySelector('td[data-testid="cell-unitCost"] .ValueDisplay') ||
-                         targetRow.querySelector('td[data-testid="cell-unitCost"]');
-          if (costCell) {
-            costCell.click(); await _delay(400);
-            var costInp = null;
-            for (var cii=0; cii<15; cii++) { costInp = document.querySelector('input[data-testid="unitCost"]'); if (costInp) break; await _delay(100); }
-            if (costInp) {
-              costInp.focus();
-              document.execCommand('selectAll', false, null); document.execCommand('delete', false, null);
-              document.execCommand('insertText', false, String(unitCost));
-              await _delay(300);
-            } else { _log.push('⚠ editExistingItem: cost input did not appear for ' + searchName); }
-          } else { _log.push('⚠ editExistingItem: cost cell not found for ' + searchName); }
-          var sideElE = document.querySelector('.ant-layout-sider, aside');
-          var saveXE = sideElE ? sideElE.getBoundingClientRect().right + 5 : 10;
-          var saveYE = window.innerHeight / 2;
-          var saveTargetE = document.elementFromPoint(saveXE, saveYE) || document.body;
-          saveTargetE.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXE,clientY:saveYE})); await _delay(150);
-          saveTargetE.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXE,clientY:saveYE})); await _delay(900);
-          var dirtySave = null;
-          for (var ds=0; ds<15; ds++) { dirtySave = document.querySelector('[data-testid="dirtyTrackingSave"]'); if (dirtySave) break; await _delay(150); }
-          if (dirtySave) { dirtySave.click(); await _delay(800); }
-          _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
-        }
-
-        var editableItems = {};
-        if (siteOptionsList) {
-          for (var ei = 0; ei < siteOptionsList.length; ei++) {
-            if (siteOptionsList[ei].existingLine) {
-              editableItems[siteOptionsList[ei].existingLine] = siteOptionsList[ei];
-            }
-          }
-        }
-
-        if (customItemsList && customItemsList.length) {
-          _log.push('');
-          _log.push('── Custom Selection Allowances ──');
-          for (var cli = 0; cli < customItemsList.length; cli++) {
-            await createLineItem(customItemsList[cli].name, customItemsList[cli].unitCost);
-          }
-        }
-
-        var writeStartTime = performance.now();
-        for (var i = 0; i < itemsList.length; i++) {
-          if (window.__dukeWriteStop) { _log.push('⏹ Stopped'); break; }
-          var editOpt = editableItems[itemsList[i].name];
-          if (editOpt) {
-            await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost);
-          } else {
-            await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
-          }
-        }
-
-        await _delay(1500);
-
-        if (siteOptionsList && siteOptionsList.length) {
-          _log.push('');
-          _log.push('── Site Options ──');
-          for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
-            if (siteOptionsList[si2].existingLine) continue;
-            await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
-          }
-        }
-
-        await _delay(1000);
-
-        // Realtor Fees — grab the grand total from BTGridFooterCell--ellipsis (the center total column)
-        var totalVal = 0;
-        var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
-        if (footerSpan) {
-          var footerTxt = (footerSpan.innerText || '').trim();
-          var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
-          if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
-        }
-        if (totalVal > 0) {
-          _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
-          await setQty('Realtor Fees', totalVal, true);
-        } else {
-          _log.push('⚠ Could not detect estimate total for Realtor Fees');
-        }
-
-        var totalWriteTime = performance.now() - writeStartTime;
-        var totalSeconds = totalWriteTime / 1000;
-        var minutes = Math.floor(totalSeconds / 60);
-        var seconds = (totalSeconds % 60).toFixed(1);
-        var timeFormat = minutes > 0 ? minutes + 'm ' + seconds + 's' : seconds + 's';
-        console.log('[TIMING] ═══════════════════════════════════════');
-        console.log('[TIMING] TOTAL WRITE TO ESTIMATE TIME: ' + timeFormat);
-        console.log('[TIMING] ═══════════════════════════════════════');
-        _log.push('');
-        _log.push('═══ TOTAL WRITE TO ESTIMATE TIME: ' + timeFormat + ' ═══');
-
-        return { ok: _log.filter(function(l){ return l.startsWith('✓'); }).length,
-                 fail: _log.filter(function(l){ return l.startsWith('✗'); }).length,
-                 lines: _log };
-      } catch(e) { return { ok: 0, fail: 1, lines: ['✗ Write script error: ' + e.message] }; } },
-      args: [items, siteOptions, customItems]
+    // Store gathered items/site-options/custom-allowances and hand off to
+    // the shared tab-picker + write flow (tabpicker.html/tabpicker.js) —
+    // the same one used by guided takeoff, base plan, and the webpage.
+    await chrome.storage.session.set({
+      pendingEstimateItems: items,
+      pendingCustomItems: customItems,
+      pendingSiteOptions: siteOptions,
+      pendingClientPreview: false,
+      pendingSlowConnection: slowConnection
     });
-
-    var res = result && result[0] && result[0].result;
-    if (res && res.lines) {
-      res.lines.forEach(function(l) { log(l); });
-      showStatus('✓ Wrote ' + res.ok + ' items' + (res.fail ? ' · ' + res.fail + ' failed (see log)' : ''), res.fail ? 'error' : 'success', 6000);
-    } else if (result && result[0] && result[0].error) {
-      log('⚠ Write script error: ' + result[0].error.message);
-    } else {
-      showStatus('Write complete', 'success');
-    }
+    await chrome.windows.create({
+      url: chrome.runtime.getURL('tabpicker.html'),
+      type: 'popup', width: 560, height: 520
+    });
+    log('Found ' + items.length + ' items. Pick a tab in the new window to write into.');
+    showStatus('Pick a BuilderTrend Estimate tab in the new window…', 'success', 5000);
 
   } catch(e) {
     log('ERROR: ' + e.message);
     showStatus('Write to Estimate failed: ' + e.message, 'error', 8000);
   } finally {
     btn.disabled = false; btn.textContent = 'Write to Estimate';
-    if (stopBtn) stopBtn.style.display = 'none';
-    _writeTabId = null;
   }
 }
 
@@ -2136,7 +1483,7 @@ function resolveProposalSelector() {
 //         });
 //       }
 //       var back = document.querySelector('[data-testid="jobProposalPresentationalHeader-back-link"]');
-//       if (!back) { console.warn('[Duke] back link not found'); return; }
+//       if (!back) { console.warn('[Keel] back link not found'); return; }
 //       back.click();
 //       var modal = await waitFor(function() {
 //         var t = document.querySelector('.ant-modal-confirm-title');
@@ -2172,6 +1519,182 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
   if (_grandTotal > 0) log('Grand total: $' + _grandTotal.toLocaleString('en-US'));
   else log('Warning: grand total not found — budget range will be skipped');
 
+  // Step 0.5: Check the Estimate grid (before Build Proposal is clicked) for
+  // (a) "Preferred Lender Incentive" qty > 0, and (b) any real item already
+  // written under "Custom Selection Allowances". These feed the group-expand
+  // step below as EXTRA reasons to expand a section — additive to, not a
+  // replacement for, the existing rendered-panel-title check there.
+  log('Checking estimate for lender/custom-allowance items…');
+  var _estFlagsRes = await chrome.scripting.executeScript({
+    target: { tabId }, world: 'MAIN',
+    func: async function() {
+      function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      function findWorksheetSearchBar() {
+        var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+          return (b.textContent || '').includes('Collapse all');
+        });
+        if (collapseBtn) {
+          var el = collapseBtn;
+          while (el && el !== document.body) {
+            var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
+            if (inp) return inp;
+            el = el.parentElement;
+          }
+        }
+        return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
+      }
+      var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      var flags = { lenderQtyPositive: false, customHasItems: false, debug: {} };
+
+      // (a) Preferred Lender Incentive quantity — the estimate grid is
+      // virtualized, so a row not currently scrolled into view doesn't exist
+      // in the DOM at all. Search + click the result first (same lookup
+      // editExistingItem uses) to scroll it into view, THEN scan for the row.
+      // Qty itself is shown inside a popup, not as plain text — open it, read
+      // the spinbutton's current value, then Escape to close without saving.
+      var si = findWorksheetSearchBar();
+      flags.debug.searchBarFound = !!si;
+      if (si) {
+        var cont = si.closest('.ant-select-selector') || si.parentElement;
+        if (cont) { cont.click(); await delay(200); }
+        si.focus(); await delay(100);
+        nativeSetter.call(si, 'Preferred Lender Incentive');
+        si.dispatchEvent(new Event('input', { bubbles: true }));
+        si.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(900);
+        var searchResult = null;
+        var resultEls = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var ri = 0; ri < resultEls.length; ri++) {
+          if ((resultEls[ri].innerText || '').trim().toLowerCase() === 'preferred lender incentive') { searchResult = resultEls[ri]; break; }
+        }
+        flags.debug.lenderSearchResultFound = !!searchResult;
+        if (searchResult) {
+          searchResult.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          searchResult.click();
+          await delay(1000);
+        }
+        nativeSetter.call(si, '');
+        si.dispatchEvent(new Event('input', { bubbles: true }));
+        si.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(400);
+      }
+
+      var lenderRow = null;
+      for (var lri = 0; lri < 20; lri++) {
+        var bTags = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var bi = 0; bi < bTags.length; bi++) {
+          if ((bTags[bi].textContent || '').trim().toLowerCase() === 'preferred lender incentive') {
+            lenderRow = bTags[bi].closest('tr.proposalBaseLineItemContainerRow');
+            break;
+          }
+        }
+        if (lenderRow) break;
+        await delay(150);
+      }
+      flags.debug.lenderRowFound = !!lenderRow;
+      if (lenderRow) {
+        lenderRow.click();
+        await delay(500);
+        var titleDisplay = null;
+        var tDisplays = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
+        for (var ti = 0; ti < tDisplays.length; ti++) {
+          if ((tDisplays[ti].textContent || '').trim().toLowerCase() === 'preferred lender incentive') { titleDisplay = tDisplays[ti]; break; }
+        }
+        flags.debug.titleDisplayFound = !!titleDisplay;
+        if (titleDisplay) {
+          titleDisplay.click();
+          await delay(400);
+          var qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
+                      || document.querySelector('input[role="spinbutton"]')
+                      || document.querySelector('input.ant-input-number-input');
+          if (qtyInput) {
+            var qv = parseFloat(qtyInput.value);
+            flags.debug.qtyRead = qtyInput.value;
+            flags.lenderQtyPositive = !isNaN(qv) && qv > 0;
+          } else {
+            flags.debug.qtyRead = 'input not found';
+          }
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+          if (document.activeElement) document.activeElement.blur();
+          document.body.click();
+          await delay(200);
+        }
+      }
+
+      // (b) Custom Selection Allowances — same search-and-reveal step
+      // createLineItem uses to find the group's "+" button, then walk
+      // sibling rows after the group header until the next group header.
+      var si2 = findWorksheetSearchBar();
+      flags.debug.groupSearchBarFound = !!si2;
+      if (si2) {
+        var cont2 = si2.closest('.ant-select-selector') || si2.parentElement;
+        if (cont2) { cont2.click(); await delay(200); }
+        si2.focus(); await delay(100);
+        nativeSetter.call(si2, 'Custom Selection Allowances');
+        si2.dispatchEvent(new Event('input', { bubbles: true }));
+        si2.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(900);
+        var liResult = null;
+        var bTagsSearch = document.querySelectorAll('b');
+        for (var lbi = 0; lbi < bTagsSearch.length; lbi++) {
+          if ((bTagsSearch[lbi].textContent || '').trim().toLowerCase() === 'custom selection allowances') { liResult = bTagsSearch[lbi]; break; }
+        }
+        if (!liResult) {
+          var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+          for (var lii = 0; lii < liItems.length; lii++) {
+            if ((liItems[lii].innerText || '').toLowerCase().includes('custom selection allowances')) { liResult = liItems[lii]; break; }
+          }
+        }
+        flags.debug.customSearchResultFound = !!liResult;
+        if (liResult) {
+          var liClick = liResult.closest('.LineItemResult') || liResult.closest('[class*="Result"]') || liResult;
+          liClick.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          liClick.click();
+          await delay(700);
+        }
+        nativeSetter.call(si2, '');
+        si2.dispatchEvent(new Event('input', { bubbles: true }));
+        si2.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(400);
+      }
+
+      var groupRow = null;
+      for (var gri = 0; gri < 20; gri++) {
+        var groupActionRows = document.querySelectorAll('.WorksheetGroupCellActions');
+        for (var gi = 0; gi < groupActionRows.length; gi++) {
+          var gTitleEl = groupActionRows[gi].querySelector('.proposalFormatGroupCellTitle');
+          if (gTitleEl && (gTitleEl.textContent || '').trim().toLowerCase() === 'custom selection allowances') {
+            groupRow = groupActionRows[gi].closest('tr') || groupActionRows[gi];
+            break;
+          }
+        }
+        if (groupRow) break;
+        await delay(150);
+      }
+      flags.debug.groupRowFound = !!groupRow;
+      if (groupRow) {
+        var sib = groupRow.nextElementSibling;
+        var foundNames = [];
+        while (sib) {
+          var nextGroupTitle = sib.querySelector && sib.querySelector('.proposalFormatGroupCellTitle');
+          if (nextGroupTitle) break;
+          var bTag = sib.querySelector && sib.querySelector('b');
+          if (sib.matches && sib.matches('tr.proposalBaseLineItemContainerRow') && bTag) {
+            var itemName = (bTag.textContent || '').trim();
+            if (itemName && !/^place\s*holder$/i.test(itemName)) foundNames.push(itemName);
+          }
+          sib = sib.nextElementSibling;
+        }
+        flags.debug.customItemNames = foundNames;
+        flags.customHasItems = foundNames.length > 0;
+      }
+
+      return flags;
+    }
+  });
+  var _estFlags = (_estFlagsRes && _estFlagsRes[0] && _estFlagsRes[0].result) || { lenderQtyPositive: false, customHasItems: false };
+  log('Estimate check: lender qty>0=' + _estFlags.lenderQtyPositive + ', custom allowance items=' + _estFlags.customHasItems + ' ' + JSON.stringify(_estFlags.debug || {}));
+
   // Step 1: Click buildProposal button
   log('Opening proposal builder…');
   setLabel('Opening proposal…');
@@ -2195,6 +1718,7 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
     setLabel('Writing proposal text…');
     var _lowFmt  = '$' + Math.round(_grandTotal * 0.99).toLocaleString('en-US');
     var _highFmt = '$' + Math.round(_grandTotal * 1.10).toLocaleString('en-US');
+    var _midFmt  = '$' + Math.round(_grandTotal).toLocaleString('en-US');
 
     // Read sales notes from SALES NOTES sheet tab
     var _salesNotesText = '';
@@ -2221,6 +1745,7 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
       '<tbody><tr><td style="text-align: center;">',
       '<h3><span style="font-size:16px;"><strong>ESTIMATED BUDGET RANGE</strong></span></h3>',
       '<h1><span style="font-size:28px;"><strong>' + _lowFmt + ' &ndash; ' + _highFmt + '</strong></span></h1>',
+      '<p><span style="font-size:16px;"><strong>MIDPOINT: ' + _midFmt + '</strong></span></p>',
       '</td></tr></tbody></table>',
       _notesBlock,
       '&nbsp;',
@@ -2331,10 +1856,10 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
           if (rm) { jobId = rm[1]; break; }
         }
 
-        console.log('[Duke] jobId found:', jobId);
+        console.log('[Keel] jobId found:', jobId);
         if (jobId) {
           // GET current draft via XHR (bypasses BT's patched window.fetch)
-          console.log('[Duke] GETting current draft via XHR...');
+          console.log('[Keel] GETting current draft via XHR...');
           var draft = await new Promise(function(resolve) {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
@@ -2349,12 +1874,12 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
             xhr.send();
           });
           if (!draft) {
-            console.log('[Duke] GET failed — falling back to Save button');
+            console.log('[Keel] GET failed — falling back to Save button');
             var saveBtn = document.querySelector('[data-testid="save"]');
             if (saveBtn) { saveBtn.click(); await delay(3000); }
           } else {
-            console.log('[Duke] GET ok');
-            console.log('[Duke] GET top-level keys:', JSON.stringify(Object.keys(draft)));
+            console.log('[Keel] GET ok');
+            console.log('[Keel] GET top-level keys:', JSON.stringify(Object.keys(draft)));
             // Merge all sub-objects into one flat object (proposal + settings + jobInfo)
             var putBody = {};
             Object.keys(draft).forEach(function(k) {
@@ -2397,11 +1922,11 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
             if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) {
               putBody.columnsToDisplay = putBody.columnsToDisplay.value;
             }
-            console.log('[Duke] requireSignatures:', putBody.requireSignatures, '| columnsToDisplay is array:', Array.isArray(putBody.columnsToDisplay));
+            console.log('[Keel] requireSignatures:', putBody.requireSignatures, '| columnsToDisplay is array:', Array.isArray(putBody.columnsToDisplay));
             putBody.introductionText = introHtml;
             putBody.closingText = closingHtml;
             var bodyStr = JSON.stringify(putBody);
-            console.log('[Duke] Sending via XHR, body size:', bodyStr.length);
+            console.log('[Keel] Sending via XHR, body size:', bodyStr.length);
 
             // Use XHR instead of fetch — BT patches window.fetch which truncates our body
             var xhrStatus = await new Promise(function(resolve) {
@@ -2411,10 +1936,10 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
               xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
               xhr.setRequestHeader('portaltype', '1');
               xhr.onload = function() {
-                console.log('[Duke] XHR status:', xhr.status, xhr.responseText);
+                console.log('[Keel] XHR status:', xhr.status, xhr.responseText);
                 resolve(xhr.status);
               };
-              xhr.onerror = function() { console.log('[Duke] XHR error'); resolve(0); };
+              xhr.onerror = function() { console.log('[Keel] XHR error'); resolve(0); };
               xhr.send(bodyStr);
             });
             await delay(1500);
@@ -2424,7 +1949,7 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
             await delay(300);
           }
         } else {
-          console.log('[Duke] jobId NOT found — falling back to Save button');
+          console.log('[Keel] jobId NOT found — falling back to Save button');
           var saveBtn = document.querySelector('[data-testid="save"]');
           if (saveBtn) { saveBtn.click(); await delay(3000); }
         }
@@ -2453,7 +1978,7 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
           try {
             var d = JSON.parse(xhr.responseText);
             var intro = (d.proposal && d.proposal.introductionText) || '';
-            console.log('[Duke] Verify GET introductionText starts with:', intro.slice(0, 80));
+            console.log('[Keel] Verify GET introductionText starts with:', intro.slice(0, 80));
           } catch(e) {}
         }
       }
@@ -2468,11 +1993,141 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
           var wrapper = cb.closest('.ant-checkbox-wrapper');
           if (wrapper && wrapper.classList.contains('ant-checkbox-wrapper-checked')) {
             cb.click();
-            console.log('[Duke] Unchecked requireSignatures');
+            console.log('[Keel] Unchecked requireSignatures');
           }
         }
       }
     });
+
+    // Click BT's own Save button before switching to Client Preview — the raw
+    // PUT above patches the draft record, but Save may be what triggers BT to
+    // regenerate whatever rendered/published snapshot Client Preview actually
+    // reads from.
+    log('Clicking Save…');
+    await chrome.scripting.executeScript({
+      target: { tabId }, world: 'MAIN',
+      func: function() {
+        var saveBtn = document.querySelector('[data-testid="save"]');
+        if (saveBtn) { saveBtn.click(); return { found: true }; }
+        return { found: false };
+      }
+    });
+    await delay(2000);
+
+    // Lock our text back in AFTER Save — BT's own Save handler may read
+    // introductionText/closingText from a React/Redux copy hydrated when
+    // "Build Proposal" first loaded (before our PUT ever ran), not from
+    // CKEditor's live buffer. Re-run the same full GET -> PUT with our HTML,
+    // last, right before the reload, so our text is guaranteed to be what
+    // the server actually holds afterward.
+    log('Locking proposal text after Save…');
+    var _lockResult = await chrome.scripting.executeScript({
+      target: { tabId }, world: 'MAIN',
+      func: async function(introHtml, closingHtml) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+        var _lockDbg = { jobId: null, getOk: null, putStatus: null, verifyLen: null };
+        var jobId = null;
+        var resources = performance.getEntriesByType('resource');
+        for (var ri = 0; ri < resources.length; ri++) {
+          var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+          if (rm) { jobId = rm[1]; break; }
+        }
+        _lockDbg.jobId = jobId;
+        if (!jobId) return _lockDbg;
+
+        var draft = await new Promise(function(resolve) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
+          xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+          xhr.setRequestHeader('portaltype', '1');
+          xhr.onload = function() {
+            if (xhr.status === 200) { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); } }
+            else resolve(null);
+          };
+          xhr.onerror = function() { resolve(null); };
+          xhr.send();
+        });
+        _lockDbg.getOk = !!draft;
+        if (!draft) return _lockDbg;
+
+        var putBody = {};
+        Object.keys(draft).forEach(function(k) {
+          if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) {
+            Object.assign(putBody, draft[k]);
+          }
+        });
+        if (!('categories' in putBody) && putBody.formatItems) putBody.categories = putBody.formatItems;
+        if (!('formatOptions' in putBody)) {
+          var dOpts = putBody.displayOptions || {};
+          var pConf = putBody.proposalDisplayConfig || {};
+          putBody.formatOptions = {
+            body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
+            includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
+            showOwnerContactInfo: putBody.showOwnerContactInfo || false, showPrintoutInfo: putBody.showPrintoutInfo || false,
+            proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
+            hasSingleSelectCostTypes: pConf.hasSingleSelectCostTypes || false
+          };
+        }
+        if (Array.isArray(putBody.categories)) {
+          putBody.categories.forEach(function(cat) { if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; } });
+        }
+        putBody.requireSignatures = false;
+        putBody.requiredSignatureUsers = [];
+        if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) putBody.columnsToDisplay = putBody.columnsToDisplay.value;
+        putBody.introductionText = introHtml;
+        putBody.closingText = closingHtml;
+        var bodyStr = JSON.stringify(putBody);
+
+        var xhrStatus = await new Promise(function(resolve) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
+          xhr.setRequestHeader('content-type', 'application/merge-patch+json');
+          xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+          xhr.setRequestHeader('portaltype', '1');
+          xhr.onload = function() { resolve(xhr.status); };
+          xhr.onerror = function() { resolve(0); };
+          xhr.send(bodyStr);
+        });
+        _lockDbg.putStatus = xhrStatus;
+        await delay(800);
+
+        var vxhr = new XMLHttpRequest();
+        vxhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, false);
+        vxhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+        vxhr.setRequestHeader('portaltype', '1');
+        vxhr.send();
+        if (vxhr.status === 200) {
+          try {
+            var vd = JSON.parse(vxhr.responseText);
+            var vIntro = (vd.proposal && vd.proposal.introductionText) || '';
+            _lockDbg.verifyLen = vIntro.length;
+          } catch(e) {}
+        }
+        return _lockDbg;
+      },
+      args: [_introHtml, _closingHtml]
+    });
+    var _lockDbgResult = _lockResult && _lockResult[0] && _lockResult[0].result;
+    log('Lock result: ' + JSON.stringify(_lockDbgResult));
+
+    // The proposal page's React app still holds the pre-save proposal object
+    // in memory (fetched when "Build Proposal" was first clicked, before our
+    // PUT ever ran). Reload — focusing the tab first so the reload isn't
+    // throttled in the background — so BT re-fetches fresh data (including
+    // what we just saved) before we switch to the Client Preview tab.
+    log('Reloading proposal page to sync saved text…');
+    await chrome.tabs.update(tabId, { active: true });
+    await delay(200);
+    await chrome.tabs.reload(tabId);
+    await new Promise(function (resolve) {
+      function checkStatus() {
+        chrome.tabs.get(tabId, function (t) {
+          if (t && t.status === 'complete') { resolve(); } else { setTimeout(checkStatus, 300); }
+        });
+      }
+      setTimeout(checkStatus, 800);
+    });
+    await delay(2500);
   }
 
   // Step 2: Click Client Preview tab
@@ -2563,17 +2218,71 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
   setLabel('Configuring groups…');
   await chrome.scripting.executeScript({
     target: { tabId }, world: 'MAIN',
-    func: async function() {
+    func: async function(estLenderQty, estCustomItems) {
       function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      function parseGroupName(raw) {
+        var m = raw.match(/^(.*?)\s*\((\d+)\)\s*$/);
+        return m ? { name: m[1].trim(), count: parseInt(m[2], 10) } : { name: raw, count: 0 };
+      }
+      async function groupHasRealItems(panelEl) {
+        var wasCollapsed = !panelEl.classList.contains('ant-collapse-item-active');
+        if (wasCollapsed) {
+          var hdr = panelEl.querySelector('.ant-collapse-header');
+          if (hdr) { hdr.click(); await delay(300); }
+        }
+        var rows = panelEl.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        var hasReal = false;
+        if (rows.length) {
+          for (var r = 0; r < rows.length; r++) {
+            var t = (rows[r].textContent || '').trim().toLowerCase();
+            if (t && !/^place\s*holder$/i.test(t)) { hasReal = true; break; }
+          }
+        } else {
+          // Fallback if the row selector doesn't match this page's markup:
+          // strip "Place Holder" occurrences and see if meaningful text remains.
+          var txt = (panelEl.textContent || '').replace(/place\s*holder/gi, '').trim();
+          hasReal = txt.length > 40;
+        }
+        return hasReal;
+      }
+
       var KEEP_EXPANDED = ['selection allowances', 'site allowances'];
 
-      // Step 1: Collapse all expanded groups EXCEPT the two we want to keep
+      // Estimate-grid-based checks (Step 0.5, read before Build Proposal was
+      // clicked) — ADDED ON TOP of the rendered-panel-title check below, not
+      // a replacement for it. Either signal is enough to force-expand.
+      if (estLenderQty && KEEP_EXPANDED.indexOf('preferred lender incentive') === -1) {
+        KEEP_EXPANDED.push('preferred lender incentive');
+      }
+      if (estCustomItems && KEEP_EXPANDED.indexOf('custom selection allowances') === -1) {
+        KEEP_EXPANDED.push('custom selection allowances');
+      }
+
+      // Also keep Preferred Lender Incentive / Custom Selection Allowances
+      // expanded if they actually have items in them (count shown in the
+      // group title, e.g. "Preferred Lender Incentive (1)"). Custom Selection
+      // Allowances additionally requires at least one item that isn't just
+      // "Place Holder" — if that's the only thing in it, leave it collapsed.
+      var precheckItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup'));
+      for (var pi = 0; pi < precheckItems.length; pi++) {
+        var nEl = precheckItems[pi].querySelector('h3.ant-typography');
+        var raw = nEl ? nEl.textContent.trim().toLowerCase() : '';
+        var parsed = parseGroupName(raw);
+        if (parsed.count > 0 && parsed.name === 'preferred lender incentive') {
+          if (KEEP_EXPANDED.indexOf(parsed.name) === -1) KEEP_EXPANDED.push(parsed.name);
+        }
+        if (parsed.count > 0 && parsed.name === 'custom selection allowances') {
+          var hasRealItems = await groupHasRealItems(precheckItems[pi]);
+          if (hasRealItems && KEEP_EXPANDED.indexOf(parsed.name) === -1) KEEP_EXPANDED.push(parsed.name);
+        }
+      }
+
+      // Step 1: Collapse all expanded groups EXCEPT the ones we want to keep
       var expandedItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup.ant-collapse-item-active'));
       for (var i = 0; i < expandedItems.length; i++) {
         var nameEl = expandedItems[i].querySelector('h3.ant-typography');
         var name = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
-        // Exact match only (strip trailing "(1)" if present)
-        var cleanName = name.replace(/\s*\(1\)\s*$/, '');
+        var cleanName = parseGroupName(name).name;
         var keep = KEEP_EXPANDED.some(function(k) { return cleanName === k; });
         if (!keep) {
           var header = expandedItems[i].querySelector('.ant-collapse-header');
@@ -2581,13 +2290,12 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
         }
       }
 
-      // Step 2: Expand Selection Allowances & Site Allowances if they're collapsed
+      // Step 2: Expand any groups in KEEP_EXPANDED that are collapsed
       var allItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup'));
       for (var j = 0; j < allItems.length; j++) {
         var nameEl2 = allItems[j].querySelector('h3.ant-typography');
         var name2 = nameEl2 ? nameEl2.textContent.trim().toLowerCase() : '';
-        // Exact match only (strip trailing "(1)" if present)
-        var cleanName2 = name2.replace(/\s*\(1\)\s*$/, '');
+        var cleanName2 = parseGroupName(name2).name;
         var shouldExpand = KEEP_EXPANDED.some(function(k) { return cleanName2 === k; });
         if (shouldExpand) {
           // Check if currently collapsed (no ant-collapse-item-active class)
@@ -2598,7 +2306,8 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
           }
         }
       }
-    }
+    },
+    args: [_estFlags.lenderQtyPositive, _estFlags.customHasItems]
   });
   await delay(800);
 
@@ -2629,6 +2338,182 @@ async function startClientPreview() {
 
 async function runM1ClientPreviewFlow(tabId, log, setLabel) {
   function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  // Step 0.5: Check the Estimate grid (before Build Proposal is clicked) for
+  // (a) "Preferred Lender Incentive" qty > 0, and (b) any real item already
+  // written under "Custom Selection Allowances". These feed the group-expand
+  // step below as EXTRA reasons to expand a section — additive to, not a
+  // replacement for, the existing rendered-panel-title check there.
+  log('Checking estimate for lender/custom-allowance items…');
+  var _estFlagsRes = await chrome.scripting.executeScript({
+    target: { tabId }, world: 'MAIN',
+    func: async function() {
+      function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      function findWorksheetSearchBar() {
+        var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+          return (b.textContent || '').includes('Collapse all');
+        });
+        if (collapseBtn) {
+          var el = collapseBtn;
+          while (el && el !== document.body) {
+            var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
+            if (inp) return inp;
+            el = el.parentElement;
+          }
+        }
+        return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
+      }
+      var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      var flags = { lenderQtyPositive: false, customHasItems: false, debug: {} };
+
+      // (a) Preferred Lender Incentive quantity — the estimate grid is
+      // virtualized, so a row not currently scrolled into view doesn't exist
+      // in the DOM at all. Search + click the result first (same lookup
+      // editExistingItem uses) to scroll it into view, THEN scan for the row.
+      // Qty itself is shown inside a popup, not as plain text — open it, read
+      // the spinbutton's current value, then Escape to close without saving.
+      var si = findWorksheetSearchBar();
+      flags.debug.searchBarFound = !!si;
+      if (si) {
+        var cont = si.closest('.ant-select-selector') || si.parentElement;
+        if (cont) { cont.click(); await delay(200); }
+        si.focus(); await delay(100);
+        nativeSetter.call(si, 'Preferred Lender Incentive');
+        si.dispatchEvent(new Event('input', { bubbles: true }));
+        si.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(900);
+        var searchResult = null;
+        var resultEls = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var ri = 0; ri < resultEls.length; ri++) {
+          if ((resultEls[ri].innerText || '').trim().toLowerCase() === 'preferred lender incentive') { searchResult = resultEls[ri]; break; }
+        }
+        flags.debug.lenderSearchResultFound = !!searchResult;
+        if (searchResult) {
+          searchResult.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          searchResult.click();
+          await delay(1000);
+        }
+        nativeSetter.call(si, '');
+        si.dispatchEvent(new Event('input', { bubbles: true }));
+        si.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(400);
+      }
+
+      var lenderRow = null;
+      for (var lri = 0; lri < 20; lri++) {
+        var bTags = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var bi = 0; bi < bTags.length; bi++) {
+          if ((bTags[bi].textContent || '').trim().toLowerCase() === 'preferred lender incentive') {
+            lenderRow = bTags[bi].closest('tr.proposalBaseLineItemContainerRow');
+            break;
+          }
+        }
+        if (lenderRow) break;
+        await delay(150);
+      }
+      flags.debug.lenderRowFound = !!lenderRow;
+      if (lenderRow) {
+        lenderRow.click();
+        await delay(500);
+        var titleDisplay = null;
+        var tDisplays = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
+        for (var ti = 0; ti < tDisplays.length; ti++) {
+          if ((tDisplays[ti].textContent || '').trim().toLowerCase() === 'preferred lender incentive') { titleDisplay = tDisplays[ti]; break; }
+        }
+        flags.debug.titleDisplayFound = !!titleDisplay;
+        if (titleDisplay) {
+          titleDisplay.click();
+          await delay(400);
+          var qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
+                      || document.querySelector('input[role="spinbutton"]')
+                      || document.querySelector('input.ant-input-number-input');
+          if (qtyInput) {
+            var qv = parseFloat(qtyInput.value);
+            flags.debug.qtyRead = qtyInput.value;
+            flags.lenderQtyPositive = !isNaN(qv) && qv > 0;
+          } else {
+            flags.debug.qtyRead = 'input not found';
+          }
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+          if (document.activeElement) document.activeElement.blur();
+          document.body.click();
+          await delay(200);
+        }
+      }
+
+      // (b) Custom Selection Allowances — same search-and-reveal step
+      // createLineItem uses to find the group's "+" button, then walk
+      // sibling rows after the group header until the next group header.
+      var si2 = findWorksheetSearchBar();
+      flags.debug.groupSearchBarFound = !!si2;
+      if (si2) {
+        var cont2 = si2.closest('.ant-select-selector') || si2.parentElement;
+        if (cont2) { cont2.click(); await delay(200); }
+        si2.focus(); await delay(100);
+        nativeSetter.call(si2, 'Custom Selection Allowances');
+        si2.dispatchEvent(new Event('input', { bubbles: true }));
+        si2.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(900);
+        var liResult = null;
+        var bTagsSearch = document.querySelectorAll('b');
+        for (var lbi = 0; lbi < bTagsSearch.length; lbi++) {
+          if ((bTagsSearch[lbi].textContent || '').trim().toLowerCase() === 'custom selection allowances') { liResult = bTagsSearch[lbi]; break; }
+        }
+        if (!liResult) {
+          var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+          for (var lii = 0; lii < liItems.length; lii++) {
+            if ((liItems[lii].innerText || '').toLowerCase().includes('custom selection allowances')) { liResult = liItems[lii]; break; }
+          }
+        }
+        flags.debug.customSearchResultFound = !!liResult;
+        if (liResult) {
+          var liClick = liResult.closest('.LineItemResult') || liResult.closest('[class*="Result"]') || liResult;
+          liClick.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          liClick.click();
+          await delay(700);
+        }
+        nativeSetter.call(si2, '');
+        si2.dispatchEvent(new Event('input', { bubbles: true }));
+        si2.dispatchEvent(new Event('change', { bubbles: true }));
+        await delay(400);
+      }
+
+      var groupRow = null;
+      for (var gri = 0; gri < 20; gri++) {
+        var groupActionRows = document.querySelectorAll('.WorksheetGroupCellActions');
+        for (var gi = 0; gi < groupActionRows.length; gi++) {
+          var gTitleEl = groupActionRows[gi].querySelector('.proposalFormatGroupCellTitle');
+          if (gTitleEl && (gTitleEl.textContent || '').trim().toLowerCase() === 'custom selection allowances') {
+            groupRow = groupActionRows[gi].closest('tr') || groupActionRows[gi];
+            break;
+          }
+        }
+        if (groupRow) break;
+        await delay(150);
+      }
+      flags.debug.groupRowFound = !!groupRow;
+      if (groupRow) {
+        var sib = groupRow.nextElementSibling;
+        var foundNames = [];
+        while (sib) {
+          var nextGroupTitle = sib.querySelector && sib.querySelector('.proposalFormatGroupCellTitle');
+          if (nextGroupTitle) break;
+          var bTag = sib.querySelector && sib.querySelector('b');
+          if (sib.matches && sib.matches('tr.proposalBaseLineItemContainerRow') && bTag) {
+            var itemName = (bTag.textContent || '').trim();
+            if (itemName && !/^place\s*holder$/i.test(itemName)) foundNames.push(itemName);
+          }
+          sib = sib.nextElementSibling;
+        }
+        flags.debug.customItemNames = foundNames;
+        flags.customHasItems = foundNames.length > 0;
+      }
+
+      return flags;
+    }
+  });
+  var _estFlags = (_estFlagsRes && _estFlagsRes[0] && _estFlagsRes[0].result) || { lenderQtyPositive: false, customHasItems: false };
+  log('Estimate check: lender qty>0=' + _estFlags.lenderQtyPositive + ', custom allowance items=' + _estFlags.customHasItems + ' ' + JSON.stringify(_estFlags.debug || {}));
 
   // Step 1: Click buildProposal button
   log('Opening proposal builder…');
@@ -2722,14 +2607,38 @@ async function runM1ClientPreviewFlow(tabId, log, setLabel) {
   setLabel('Configuring groups…');
   await chrome.scripting.executeScript({
     target: { tabId }, world: 'MAIN',
-    func: async function() {
+    func: async function(estLenderQty, estCustomItems) {
       function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      function parseGroupName(raw) {
+        var m = raw.match(/^(.*?)\s*\((\d+)\)\s*$/);
+        return m ? { name: m[1].trim(), count: parseInt(m[2], 10) } : { name: raw, count: 0 };
+      }
       var KEEP_EXPANDED = ['selection allowances', 'site allowances'];
+
+      // Estimate-grid-based checks (Step 0.5, read before Build Proposal was
+      // clicked) — ADDED ON TOP of the rendered-panel-title check below, not
+      // a replacement for it. Either signal is enough to force-expand.
+      if (estLenderQty && KEEP_EXPANDED.indexOf('preferred lender incentive') === -1) {
+        KEEP_EXPANDED.push('preferred lender incentive');
+      }
+      if (estCustomItems && KEEP_EXPANDED.indexOf('custom selection allowances') === -1) {
+        KEEP_EXPANDED.push('custom selection allowances');
+      }
+
+      var precheckItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup'));
+      precheckItems.forEach(function(it) {
+        var nEl = it.querySelector('h3.ant-typography');
+        var raw = nEl ? nEl.textContent.trim().toLowerCase() : '';
+        var parsed = parseGroupName(raw);
+        if (parsed.count > 0 && (parsed.name === 'preferred lender incentive' || parsed.name === 'custom selection allowances')) {
+          if (KEEP_EXPANDED.indexOf(parsed.name) === -1) KEEP_EXPANDED.push(parsed.name);
+        }
+      });
       var expandedItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup.ant-collapse-item-active'));
       for (var i = 0; i < expandedItems.length; i++) {
         var nameEl = expandedItems[i].querySelector('h3.ant-typography');
         var name = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
-        var cleanName = name.replace(/\s*\(1\)\s*$/, '');
+        var cleanName = parseGroupName(name).name;
         var keep = KEEP_EXPANDED.some(function(k) { return cleanName === k; });
         if (!keep) {
           var header = expandedItems[i].querySelector('.ant-collapse-header');
@@ -2740,7 +2649,7 @@ async function runM1ClientPreviewFlow(tabId, log, setLabel) {
       for (var j = 0; j < allItems.length; j++) {
         var nameEl2 = allItems[j].querySelector('h3.ant-typography');
         var name2 = nameEl2 ? nameEl2.textContent.trim().toLowerCase() : '';
-        var cleanName2 = name2.replace(/\s*\(1\)\s*$/, '');
+        var cleanName2 = parseGroupName(name2).name;
         var shouldExpand = KEEP_EXPANDED.some(function(k) { return cleanName2 === k; });
         if (shouldExpand) {
           var isCollapsed = !allItems[j].classList.contains('ant-collapse-item-active');
@@ -2750,7 +2659,8 @@ async function runM1ClientPreviewFlow(tabId, log, setLabel) {
           }
         }
       }
-    }
+    },
+    args: [_estFlags.lenderQtyPositive, _estFlags.customHasItems]
   });
   await delay(800);
 
@@ -2966,13 +2876,9 @@ async function init() {
   $('btn-write-estimate').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); e.stopPropagation(); }
   });
-  $('btn-stop-write').addEventListener('click', stopWrite);
   $('btn-proposal-done')?.addEventListener('click', resolveProposalSelector);
   $('btn-client-preview')?.addEventListener('click', startClientPreview);
   $('btn-m1-client-preview')?.addEventListener('click', startM1ClientPreview);
-
-  // Stop writing if the extension popup is closed mid-run
-  window.addEventListener('unload', stopWrite);
 
   // Manual entry
   $('btn-write-manual').addEventListener('click', function() {
@@ -3014,6 +2920,7 @@ async function init() {
   });
 
   // Settings & refresh
+  $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://alanamac222.github.io/KeelQuickQuote/' }); });
   $('btn-settings').addEventListener('click', function() { chrome.runtime.openOptionsPage(); });
   $('btn-refresh-sheet').addEventListener('click', function() { loadSheetTab(activeTab); });
 

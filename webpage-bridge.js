@@ -1,6 +1,6 @@
-// Duke Estimating — Webpage Bridge
+// Keel EZ Estimate — Webpage Bridge
 //
-// Runs as a content script on the public Keel Quick Quote webpage
+// Runs as a content script on the public EZEstimate webpage
 // (https://alanamac222.github.io/*). Lets that plain webpage hand off
 // the "Write to Estimate" flow to this extension, which has the
 // chrome.tabs / chrome.scripting permissions needed to show a real
@@ -8,7 +8,8 @@
 //
 // Protocol (window.postMessage, since the webpage has no direct access
 // to chrome.runtime):
-//   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'OPEN_ESTIMATE_TAB_PICKER', items: [...] }
+//   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'OPEN_ESTIMATE_TAB_PICKER', items: [...], slowConnection: bool }
+//   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'RUN_CLIENT_PREVIEW', slowConnection: bool }
 //   Bridge -> Page  : { source: 'duke-ext',             type: 'EXTENSION_READY' }
 //   Bridge -> Page  : { source: 'duke-ext',             type: 'OPEN_ESTIMATE_TAB_PICKER_RESULT', ok, error }
 
@@ -35,7 +36,7 @@
 
     if (data.type === 'OPEN_ESTIMATE_TAB_PICKER') {
       chrome.runtime.sendMessage(
-        { action: 'OPEN_ESTIMATE_TAB_PICKER', items: data.items || [], customItems: data.customItems || [], siteOptions: data.siteOptions || [] },
+        { action: 'OPEN_ESTIMATE_TAB_PICKER', items: data.items || [], customItems: data.customItems || [], siteOptions: data.siteOptions || [], slowConnection: !!data.slowConnection },
         function (res) {
           var err = chrome.runtime.lastError;
           window.postMessage({
@@ -50,7 +51,7 @@
 
     if (data.type === 'RUN_CLIENT_PREVIEW') {
       chrome.runtime.sendMessage(
-        { action: 'RUN_CLIENT_PREVIEW' },
+        { action: 'RUN_CLIENT_PREVIEW', slowConnection: !!data.slowConnection },
         function (res) {
           var err = chrome.runtime.lastError;
           window.postMessage({

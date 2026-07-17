@@ -1,4 +1,4 @@
-// Duke Estimating - Background Service Worker
+// Keel EZ Estimate - Background Service Worker
 // Handles Google Sheets API auth, data read/write, and GPT-4o plan analysis
 
 const SHEETS_API    = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -202,7 +202,7 @@ async function cropWhitespace(base64) {
     new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); });
     return btoa(binary);
   } catch (e) {
-    console.warn('[Duke] cropWhitespace failed:', e.message);
+    console.warn('[Keel] cropWhitespace failed:', e.message);
     return base64; // return original if crop fails
   }
 }
@@ -362,7 +362,7 @@ async function callGPT4o(payload) {
   const content = (data.choices?.[0]?.message?.content || '').trim();
 
   // Log full response to service worker console for debugging
-  console.log('[Duke Estimating] GPT-4o raw response:', content);
+  console.log('[Keel EZ Estimate] GPT-4o raw response:', content);
 
   if (!content) throw new Error('GPT-4o returned an empty response. The image may not have loaded correctly.');
 
@@ -530,7 +530,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           // Zero-fill target cells before writing real values
           const zeroRanges = [
             'I3','I4','I5','I6','I7','I8','I9','I10','I11','I12',
-            'I18','I19','I20','I21','I22','I23','I24','I25','I26','I27','I28'
+            'I18','I19','I20','I21','I22','I23','I24','I25','I26','I27','I28','I29'
           ];
           await sheetsWrite(zeroRanges.map(r => ({ range: r, value: 0 })));
           await sheetsWrite(updates);
@@ -590,7 +590,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
           // Auto-crop each page using OffscreenCanvas to remove whitespace
           const croppedImages = await Promise.all(validImages.map(b64 => cropWhitespace(b64)));
-          console.log(`[Duke Estimating] Sending ${croppedImages.length} page(s) to GPT-4o, sizes: ${croppedImages.map(b=>b.length).join(', ')} chars`);
+          console.log(`[Keel EZ Estimate] Sending ${croppedImages.length} page(s) to GPT-4o, sizes: ${croppedImages.map(b=>b.length).join(', ')} chars`);
 
           // Send cropped pages to GPT-4o
           const result = await analyzeWithGPT4oPages(croppedImages, 'image/png');
@@ -735,7 +735,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             const _tFetch0 = performance.now();
             const gifB64 = await fetchGifAsBase64(msg.imageUrl);
             const _tFetch1 = performance.now();
-            console.log('[Duke Timing] GIF fetch: ' + (_tFetch1 - _tFetch0).toFixed(0) + 'ms  size: ' + gifB64.length + ' chars b64');
+            console.log('[Keel Timing] GIF fetch: ' + (_tFetch1 - _tFetch0).toFixed(0) + 'ms  size: ' + gifB64.length + ' chars b64');
 
             const _tOcr0 = performance.now();
             const ocrRes = await new Promise((resolve, reject) => {
@@ -749,13 +749,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               );
             });
             const _tOcr1 = performance.now();
-            console.log('[Duke Timing] Tesseract OCR: ' + (_tOcr1 - _tOcr0).toFixed(0) + 'ms  text length: ' + ocrRes.length + ' chars');
-            console.log('[Duke Estimating] OCR preview:', ocrRes.slice(0, 200));
+            console.log('[Keel Timing] Tesseract OCR: ' + (_tOcr1 - _tOcr0).toFixed(0) + 'ms  text length: ' + ocrRes.length + ' chars');
+            console.log('[Keel EZ Estimate] OCR preview:', ocrRes.slice(0, 200));
 
             const _tGpt0 = performance.now();
             const result = await extractFlooringSpecs(ocrRes);
             const _tGpt1 = performance.now();
-            console.log('[Duke Timing] GPT-4o text analysis: ' + (_tGpt1 - _tGpt0).toFixed(0) + 'ms');
+            console.log('[Keel Timing] GPT-4o text analysis: ' + (_tGpt1 - _tGpt0).toFixed(0) + 'ms');
 
             sendResponse({ ok: true, result });
           } catch (e) {
@@ -765,7 +765,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
 
         case 'FOCUS_PANEL': {
-          // Bring the Duke panel window to the front (e.g. when the Area Setup questionnaire appears)
+          // Bring the Keel panel window to the front (e.g. when the Area Setup questionnaire appears)
           if (panelWindowId !== null) {
             try { await chrome.windows.update(panelWindowId, { focused: true, drawAttention: true }); }
             catch (_) {}
@@ -778,7 +778,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           // Called from webpage-bridge.js on behalf of the public Keel Quick
           // Quote webpage. Stash the items and open the tab-picker window —
           // it reads them back out of session storage once it loads.
-          await chrome.storage.session.set({ pendingEstimateItems: msg.items || [], pendingCustomItems: msg.customItems || [], pendingSiteOptions: msg.siteOptions || [], pendingClientPreview: false });
+          await chrome.storage.session.set({ pendingEstimateItems: msg.items || [], pendingCustomItems: msg.customItems || [], pendingSiteOptions: msg.siteOptions || [], pendingClientPreview: false, pendingSlowConnection: !!msg.slowConnection });
           const pickerUrl = chrome.runtime.getURL('tabpicker.html');
           await chrome.windows.create({
             url: pickerUrl,
@@ -792,7 +792,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
 
         case 'RUN_CLIENT_PREVIEW': {
-          await chrome.storage.session.set({ pendingClientPreview: true, pendingEstimateItems: [], pendingCustomItems: [] });
+          await chrome.storage.session.set({ pendingClientPreview: true, pendingEstimateItems: [], pendingCustomItems: [], pendingSlowConnection: !!msg.slowConnection });
           const cpPickerUrl = chrome.runtime.getURL('tabpicker.html');
           await chrome.windows.create({
             url: cpPickerUrl,
@@ -806,7 +806,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
 
         case 'NOTIFY_PDF_READY': {
-          // Find the KeelQuickQuote tab and tell its content script the PDF is ready
+          // Find the EZEstimate webpage tab and tell its content script the PDF is ready
           const allTabs = await chrome.tabs.query({ url: 'https://alanamac222.github.io/*' });
           for (const t of allTabs) {
             try { await chrome.tabs.sendMessage(t.id, { action: 'PROPOSAL_PDF_READY' }); } catch (_) {}
@@ -892,7 +892,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               fd.append('_flag', 'D');
               fd.append('SvgElement', dotHtml);
               fetch('/Joist/DocumentPagesLayoutUpdateSquarefeet/', { method: 'POST', body: fd })
-                .catch(function (e) { console.log('[Duke] count POST error:', e); });
+                .catch(function (e) { console.log('[Keel] count POST error:', e); });
 
               return { ok: true, dotId: dotId, layoutId: layoutId };
             },

@@ -200,6 +200,7 @@
       <span class="zoom-label" id="zoom-label">100%</span>
       <button class="ctrl-btn" id="btn-zoom-in"  title="Zoom in">+</button>
       <button class="ctrl-btn" id="btn-pin" title="Pin: keep on top">📌</button>
+      <button id="btn-open-ezestimate" class="icon-btn" title="Open EZEstimate webpage">🔗</button>
       <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
     </div>
   </div>
@@ -220,10 +221,31 @@
         </div>
       </div>
 
+      <!-- Entry mode toggle: Guided Takeoff vs Start From a Base Plan -->
+      <div class="tk-entry-toggle" id="tk-entry-toggle">
+        <button id="btn-entry-guided" class="tk-entry-btn active">Guided Takeoff</button>
+        <button id="btn-entry-baseplan" class="tk-entry-btn">Start From a Base Plan</button>
+      </div>
+
       <!-- Idle state -->
       <div id="tk-idle" class="tk-idle">
         <button id="btn-start-takeoff" class="btn-primary tk-start-btn">▶ Start Takeoff</button>
         <p class="tk-idle-hint">Opens SquareTakeoff, cleans up sheets, sets scale, then guides you through all counts, areas &amp; linear.</p>
+      </div>
+
+      <!-- Start From a Base Plan (hidden by default) -->
+      <div id="tk-baseplan" class="tk-baseplan hidden">
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <label style="font-size:10px;color:#64748b;font-weight:600;">Base Plan</label>
+          <select id="tk-baseplan-select" style="font-size:12px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#1e293b;">
+            <option value="">— Select a plan —</option>
+            <option value="KIAWAH">Kiawah</option>
+            <option value="SANIBEL">Sanibel</option>
+            <option value="VERO">Vero</option>
+          </select>
+        </div>
+        <button id="btn-baseplan-go" class="btn-primary tk-start-btn">Go →</button>
+        <p id="tk-baseplan-status" class="tk-idle-hint"></p>
       </div>
 
       <!-- Active state: step guidance -->
@@ -413,6 +435,10 @@
           <button id="ext-add-custom-row" style="font-size:11px;color:#0ea5e9;background:none;border:none;cursor:pointer;padding:2px 0;margin-top:2px;">+ Add row</button>
         </div>
 
+        <label class="lender-toggle" title="Doubles every wait time the Write to Estimate automation uses, to ride out a slow BuilderTrend connection">
+          <input type="checkbox" id="chk-slow-connection">
+          <span class="lender-label">Slow Connection</span>
+        </label>
         <div class="estimate-controls">
           <label class="lender-toggle" title="Set Preferred Lender Incentive quantity to 1 in the estimate">
             <input type="checkbox" id="chk-lender">
@@ -421,7 +447,6 @@
           <button id="btn-write-estimate" class="btn-primary estimate-btn">Write to Estimate</button>
           <button id="btn-client-preview" class="btn-secondary estimate-btn">Start Prelim - Budget Client Preview</button>
           <button id="btn-m1-client-preview" class="btn-secondary estimate-btn">Start M1 Client Preview</button>
-          <button id="btn-stop-write" class="btn-secondary estimate-btn" style="display:none;background:#ef4444;color:#fff;border:none;cursor:pointer;">⏹ Stop</button>
         </div>
         <div id="estimate-log" class="estimate-log hidden"></div>
         <div id="proposal-select" class="proposal-select hidden">

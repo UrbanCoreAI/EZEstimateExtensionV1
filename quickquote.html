@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Keel Quick Quote</title>
+  <title>EZEstimate</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -367,7 +367,7 @@
 <header>
   <div class="logo-mark">EZ</div>
   <div>
-    <div class="brand-name">Keel Quick Quote</div>
+    <div class="brand-name">EZEstimate</div>
     <div class="brand-sub">KeelEZEstimate System</div>
   </div>
 </header>
@@ -661,7 +661,7 @@
 
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: function() { window.__dukeWriteStop = false; }
+        func: function() { window.__keelWriteStop = false; }
       }).catch(function(){});
 
       var result = await chrome.scripting.executeScript({
@@ -843,7 +843,7 @@
 
             var writeStartTime = performance.now();
             for (var i = 0; i < itemsList.length; i++) {
-              if (window.__dukeWriteStop) { _log.push('⏹ Stopped'); break; }
+              if (window.__keelWriteStop) { _log.push('⏹ Stopped'); break; }
               await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
             }
 
