@@ -2920,7 +2920,7 @@ async function init() {
   });
 
   // Settings & refresh
-  $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://alanamac222.github.io/KeelQuickQuote/' }); });
+  $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://alanamac222.github.io/KeelEZEstimate/' }); });
   $('btn-settings').addEventListener('click', function() { chrome.runtime.openOptionsPage(); });
   $('btn-refresh-sheet').addEventListener('click', function() { loadSheetTab(activeTab); });
 
