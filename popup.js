@@ -1720,12 +1720,10 @@ async function runClientPreviewFlow(tabId, log, setLabel) {
     var _highFmt = '$' + Math.round(_grandTotal * 1.10).toLocaleString('en-US');
     var _midFmt  = '$' + Math.round(_grandTotal).toLocaleString('en-US');
 
-    // Read sales notes from SALES NOTES sheet tab
+    // Sales notes intentionally NOT read/written for this button (PBCP via
+    // the static extension popup) — _salesNotesText stays '' so _notesBlock
+    // below falls through to its existing empty-notes path unchanged.
     var _salesNotesText = '';
-    try {
-      var _snResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: 'SALES NOTES', range: 'A1' });
-      _salesNotesText = ((_snResp.data && _snResp.data[0] && _snResp.data[0][0]) || '').trim();
-    } catch(e) { log('⚠ Could not read sales notes: ' + e.message); }
 
     var _notesBlock = '';
     if (_salesNotesText) {
@@ -2920,7 +2918,7 @@ async function init() {
   });
 
   // Settings & refresh
-  $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://alanamac222.github.io/KeelEZEstimate/' }); });
+  $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://UrbanCoreAI.github.io/KeelEZEstimate/' }); });
   $('btn-settings').addEventListener('click', function() { chrome.runtime.openOptionsPage(); });
   $('btn-refresh-sheet').addEventListener('click', function() { loadSheetTab(activeTab); });
 
