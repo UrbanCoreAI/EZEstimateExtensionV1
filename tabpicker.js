@@ -5,19 +5,33 @@ var pendingItems = [];
 var pendingCustomItems = [];
 var pendingSiteOptions = [];
 var pendingClientPreview = false;
+var pendingSlowConnection = false;
+var _writeTabId = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
+function stopWrite() {
+  if (_writeTabId) {
+    chrome.scripting.executeScript({
+      target: { tabId: _writeTabId },
+      func: function() { window.__keelWriteStop = true; }
+    }).catch(function(){});
+  }
+}
+
 async function init() {
-  var data = await chrome.storage.session.get(['pendingEstimateItems','pendingCustomItems','pendingSiteOptions','pendingClientPreview']);
+  var data = await chrome.storage.session.get(['pendingEstimateItems','pendingCustomItems','pendingSiteOptions','pendingClientPreview','pendingSlowConnection']);
   pendingItems = data.pendingEstimateItems || [];
   pendingCustomItems = data.pendingCustomItems || [];
   pendingSiteOptions = data.pendingSiteOptions || [];
   pendingClientPreview = !!data.pendingClientPreview;
+  pendingSlowConnection = !!data.pendingSlowConnection;
 
   if (pendingClientPreview) {
     document.querySelector('.hdr-title').textContent = 'Start Prelim - Budget Client Preview';
     document.getElementById('item-count').textContent = 'Select a BuilderTrend Estimate tab';
+    var cpWarning = document.getElementById('cp-warning');
+    if (cpWarning) cpWarning.classList.remove('hidden');
   } else {
     document.getElementById('item-count').textContent =
       pendingItems.length + ' item' + (pendingItems.length === 1 ? '' : 's') + ' ready to write';
@@ -25,6 +39,8 @@ async function init() {
   document.getElementById('btn-refresh').addEventListener('click', loadTabs);
   document.getElementById('btn-back').addEventListener('click', showPicker);
   document.getElementById('btn-close').addEventListener('click', function () { window.close(); });
+  document.getElementById('btn-stop-write').addEventListener('click', stopWrite);
+  window.addEventListener('unload', stopWrite);
   await loadTabs();
 }
 
@@ -105,14 +121,34 @@ async function selectTab(tab) {
   document.getElementById('picker-view').classList.add('hidden');
   document.getElementById('progress-view').classList.remove('hidden');
 
+  // slowConnection (set via the panel's checkbox, or sent by the webpage)
+  // doubles every wait time this file's own outer-scope delays use. The
+  // injected in-page automation (writeEstimateInPage, selectTabForClientPreview's
+  // executeScript calls) gets the same flag passed in separately, since each
+  // runs in its own isolated page context and can't see this closure.
+  var slowConnection = pendingSlowConnection;
+  function scaled(ms) { return slowConnection ? ms * 2 : ms; }
+
   var titleEl  = document.getElementById('progress-title');
   var statusEl = document.getElementById('progress-status');
   var logEl    = document.getElementById('log');
+  var pbcpBtn  = document.getElementById('btn-start-pbcp');
 
   titleEl.textContent = 'Writing to: ' + (tab.title || tab.url);
   statusEl.className = 'progress-status';
   statusEl.innerHTML = '<span class="spin"></span>Bringing tab into focus…';
   logEl.textContent = '';
+  if (pbcpBtn) { pbcpBtn.classList.add('hidden'); pbcpBtn.onclick = null; }
+
+  // Bring this log window to the front of all tabs/windows so the user
+  // notices when the run finishes, whether it's this write or (for the
+  // client-preview branch below) the Client Preview flow it kicks off.
+  async function bringLogWindowToFront() {
+    try {
+      var thisWin = await chrome.windows.getCurrent();
+      await chrome.windows.update(thisWin.id, { focused: true, drawAttention: true });
+    } catch (_) {}
+  }
 
   function log(msg) {
     logEl.textContent += msg + '\n';
@@ -120,27 +156,63 @@ async function selectTab(tab) {
   }
 
   if (pendingClientPreview) {
-    await selectTabForClientPreview(tab, titleEl, statusEl, logEl);
+    // Focus the tab BEFORE reloading it — reloading while backgrounded lets
+    // Chrome throttle the reload (deprioritized rendering/timers), so the
+    // page can still be mid-hydration by the time we act on it. Focusing
+    // first guarantees the reload happens in the foreground.
+    statusEl.innerHTML = '<span class="spin"></span>Bringing tab into focus…';
+    await chrome.tabs.update(tab.id, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    await new Promise(function (r) { setTimeout(r, scaled(400)); });
+
+    // Now reload the (foregrounded) tab up front so it starts from a clean
+    // state — no resource-timing entries or React state left over from a
+    // different job that may have been viewed earlier in this same tab.
+    statusEl.innerHTML = '<span class="spin"></span>Reloading tab…';
+    await chrome.tabs.reload(tab.id);
+    await new Promise(function (resolve) {
+      function checkStatus() {
+        chrome.tabs.get(tab.id, function (t) {
+          if (t && t.status === 'complete') { resolve(); } else { setTimeout(checkStatus, scaled(300)); }
+        });
+      }
+      setTimeout(checkStatus, scaled(800));
+    });
+    await new Promise(function (r) { setTimeout(r, scaled(1500)); });
+    await selectTabForClientPreview(tab, titleEl, statusEl, logEl, slowConnection);
     return;
   }
 
+  var wroteSomething = false;
+  var stopBtn = document.getElementById('btn-stop-write');
   try {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
-    await new Promise(function (r) { setTimeout(r, 400); });
+    await new Promise(function (r) { setTimeout(r, scaled(400)); });
+
+    _writeTabId = tab.id;
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: function() { window.__keelWriteStop = false; }
+    }).catch(function(){});
+    if (stopBtn) stopBtn.classList.remove('hidden');
 
     statusEl.innerHTML = '<span class="spin"></span>Writing items to the estimate…';
 
     var result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: writeEstimateInPage,
-      args: [pendingItems, pendingCustomItems, pendingSiteOptions]
+      args: [pendingItems, pendingCustomItems, pendingSiteOptions, slowConnection]
     });
 
     var res2 = result && result[0] && result[0].result;
     if (res2 && res2.lines) {
+      wroteSomething = true;
       res2.lines.forEach(function (l) { log(l); });
-      if (res2.fail) {
+      if (res2.stopped) {
+        statusEl.className = 'progress-status error';
+        statusEl.textContent = 'Stopped — wrote ' + res2.ok + ' item(s) before stopping.';
+      } else if (res2.fail) {
         statusEl.className = 'progress-status error';
         statusEl.textContent = 'Wrote ' + res2.ok + ' item(s) · ' + res2.fail + ' failed — see log above.';
       } else {
@@ -231,20 +303,57 @@ async function selectTab(tab) {
     log('ERROR: ' + e.message);
     statusEl.className = 'progress-status error';
     statusEl.textContent = 'Failed: ' + e.message;
+  } finally {
+    if (stopBtn) stopBtn.classList.add('hidden');
+    _writeTabId = null;
+    await bringLogWindowToFront();
+    if (wroteSomething && pbcpBtn) {
+      pbcpBtn.classList.remove('hidden');
+      pbcpBtn.onclick = function () { selectTabForClientPreview(tab, titleEl, statusEl, logEl, slowConnection); };
+    }
   }
 }
 
 // Injected into the target tab via chrome.scripting.executeScript.
-async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) {
+async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, slowConnection) {
   try {
     var _log = [];
-    var _delay = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    // Every wait in this function funnels through _delay — doubling it here
+    // is enough to double retry-loop budgets too (same iteration count, each
+    // iteration just takes twice as long), so no loop counts need to change.
+    var _delay = function (ms) { return new Promise(function (r) { setTimeout(r, slowConnection ? ms * 2 : ms); }); };
 
     function reactSet(input, val) {
       var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       setter.call(input, String(val));
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function writeReactValue(el, val) {
+      if (!el) return;
+      el.focus();
+      if (typeof el.select === 'function') el.select();
+      try {
+        var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        var nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        nativeSetter.call(el, String(val));
+      } catch (e) {
+        el.value = String(val);
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+      try {
+        var textEvent = document.createEvent('TextEvent');
+        textEvent.initTextEvent('textInput', true, true, null, String(val));
+        el.dispatchEvent(textEvent);
+      } catch (e) {}
+      try {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        document.execCommand('insertText', false, String(val));
+      } catch (e) {}
+      el.blur();
     }
 
     function findWorksheetSearchBar() {
@@ -264,6 +373,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
 
     function waitForModalClose(maxWaitMs) {
       maxWaitMs = maxWaitMs || 2000;
+      if (slowConnection) maxWaitMs *= 2;
       return new Promise(function (resolve) {
         var startWait = performance.now();
         var checkInterval = setInterval(function () {
@@ -425,8 +535,9 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       _log.push('✓ ' + name + ' → ' + qty + (isUnitCost ? ' (unit cost)' : ' (qty)') + ' (' + totalTime.toFixed(0) + 'ms)');
     }
 
-    async function createLineItem(title, unitCost) {
+    async function createLineItem(title, unitCost, description) {
       var ns = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      var nsArea = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
 
       // ── Step 1: Type in search bar, then click the <b>Custom Selection Allowances</b>
       // result — that's what scrolls the virtualized table to render the group row.
@@ -540,12 +651,34 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
 
       // Fill title
       newTitleEl.scrollIntoView({ behavior:'instant', block:'center' });
-      newTitleEl.focus(); await _delay(150);
-      newTitleEl.select();
-      ns.call(newTitleEl, title);
-      newTitleEl.dispatchEvent(new Event('input',{bubbles:true}));
-      newTitleEl.dispatchEvent(new Event('change',{bubbles:true}));
+      writeReactValue(newTitleEl, title);
       await _delay(300);
+
+      // ── Step 4.5: Description (optional) ──────────────────────────────────
+      // Confirmed via real outerHTML: the description field is a flat,
+      // non-namespaced <textarea id="description" name="description"
+      // data-testid="description">, NOT scoped per-row like costCodeId/
+      // parentId. Poll for it directly — no click-to-reveal needed, no
+      // keyBase guessing, just wait for React to render it.
+      if (description) {
+        _log.push('  └ Writing description: "' + description + '"…');
+        var descArea = null;
+        for (var da = 0; da < 30; da++) {
+          descArea = document.getElementById('description')
+                  || document.querySelector('textarea[data-testid="description"]')
+                  || document.querySelector('textarea[name="description"]');
+          if (descArea) break;
+          await _delay(150);
+        }
+        if (descArea) {
+          descArea.scrollIntoView({ behavior:'instant', block:'center' });
+          writeReactValue(descArea, description);
+          await _delay(250);
+          _log.push('  ✓ Description filled into textarea');
+        } else {
+          _log.push('⚠ createLineItem: description textarea not found — continuing');
+        }
+      }
 
       // ── Step 5: Cost code — type & pick "Custom Selection Allowances" ─────
       // keyBase e.g. "formatItems[4].items[0]"
@@ -623,7 +756,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
         _log.push('⚠ createLineItem: unit cost input not found — continuing');
       }
 
-      // ── Step 7: Save by clicking to the left of the estimate ─────────────
+      // ── Step 7: First save — click off to the left of the estimate to trigger
+      // the dirty-tracking prompt ────────────────────────────────────────────
       var sideEl = document.querySelector('.ant-layout-sider, aside');
       var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
       var saveY = window.innerHeight / 2;
@@ -632,6 +766,22 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       await _delay(150);
       saveTarget.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveX,clientY:saveY}));
       await _delay(900);
+
+      // ── Step 8: Second save — click the Save button on the dirty-tracking
+      // popup. Without this, clicking off alone no longer persists the item —
+      // the next createLineItem call's typing (search bar / cost code) can
+      // then wipe out the still-unsaved row. Same pattern as editExistingItem
+      // and editGroupPlaceHolder ─────────────────────────────────────────────
+      var dirtySaveCreate = null;
+      for (var dsc = 0; dsc < 15; dsc++) {
+        dirtySaveCreate = document.querySelector('[data-testid="dirtyTrackingSave"]');
+        if (dirtySaveCreate) break;
+        await _delay(150);
+      }
+      if (dirtySaveCreate) {
+        dirtySaveCreate.click();
+        await _delay(800);
+      }
 
       _log.push('✓ Created: ' + title + ' → $' + unitCost);
     }
@@ -833,7 +983,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
         }
       }
 
-      // Step 7: Save by clicking sidebar
+      // Step 7: First save — click off to the sidebar to trigger the
+      // dirty-tracking prompt
       var sideEl = document.querySelector('.ant-layout-sider, aside');
       var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
       var saveY = window.innerHeight / 2;
@@ -842,6 +993,19 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       await _delay(150);
       saveTarget.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveX,clientY:saveY}));
       await _delay(900);
+
+      // Step 8: Second save — click the Save button on the dirty-tracking
+      // popup, same as editExistingItem/editGroupPlaceHolder
+      var dirtySaveSite = null;
+      for (var dss = 0; dss < 15; dss++) {
+        dirtySaveSite = document.querySelector('[data-testid="dirtyTrackingSave"]');
+        if (dirtySaveSite) break;
+        await _delay(150);
+      }
+      if (dirtySaveSite) {
+        dirtySaveSite.click();
+        await _delay(800);
+      }
 
       _log.push('✓ Site item: ' + title + ' → ' + parentGroup + (unitCost ? ' → $' + unitCost : ''));
     }
@@ -983,17 +1147,164 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
     }
 
+    // Like editExistingItem, but scoped to a specific group's rows only —
+    // "Place Holder" is not a unique title page-wide (multiple groups each
+    // have their own default placeholder), so a global text search can
+    // silently edit the wrong group's row. Reveal the target group, then
+    // only walk ITS sibling rows for the placeholder (same scoping pattern
+    // as groupHasRealItems / the Step 0.5 estimate check).
+    async function editGroupPlaceHolder(groupTitle, newTitle, unitCost, description) {
+      var nsG = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      var nsAreaG = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+
+      var siG = findWorksheetSearchBar();
+      if (siG) {
+        var contG = siG.closest('.ant-select-selector') || siG.parentElement;
+        if (contG) { contG.click(); await _delay(200); }
+        siG.focus(); await _delay(100);
+        nsG.call(siG, groupTitle);
+        siG.dispatchEvent(new Event('input', { bubbles: true }));
+        siG.dispatchEvent(new Event('change', { bubbles: true }));
+        await _delay(900);
+        var gResult = null;
+        var gBTags = document.querySelectorAll('b');
+        for (var gbi = 0; gbi < gBTags.length; gbi++) {
+          if ((gBTags[gbi].textContent || '').trim().toLowerCase() === groupTitle.toLowerCase()) { gResult = gBTags[gbi]; break; }
+        }
+        if (!gResult) {
+          var gItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+          for (var gii = 0; gii < gItems.length; gii++) {
+            if ((gItems[gii].innerText || '').toLowerCase().includes(groupTitle.toLowerCase())) { gResult = gItems[gii]; break; }
+          }
+        }
+        if (gResult) {
+          var gClick = gResult.closest('.LineItemResult') || gResult.closest('[class*="Result"]') || gResult;
+          gClick.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          gClick.click(); await _delay(700);
+        }
+        nsG.call(siG, ''); siG.dispatchEvent(new Event('input', { bubbles: true })); siG.dispatchEvent(new Event('change', { bubbles: true })); await _delay(400);
+      }
+
+      var targetRow = null;
+      for (var gri = 0; gri < 20; gri++) {
+        var groupRow = null;
+        var groupActionRows = document.querySelectorAll('.WorksheetGroupCellActions');
+        for (var gi = 0; gi < groupActionRows.length; gi++) {
+          var gTitleEl = groupActionRows[gi].querySelector('.proposalFormatGroupCellTitle');
+          if (gTitleEl && (gTitleEl.textContent || '').trim().toLowerCase() === groupTitle.toLowerCase()) {
+            groupRow = groupActionRows[gi].closest('tr') || groupActionRows[gi];
+            break;
+          }
+        }
+        if (groupRow) {
+          var sib = groupRow.nextElementSibling;
+          while (sib) {
+            var nextGroupTitle = sib.querySelector && sib.querySelector('.proposalFormatGroupCellTitle');
+            if (nextGroupTitle) break;
+            var bTagG = sib.querySelector && sib.querySelector('b');
+            if (sib.matches && sib.matches('tr.proposalBaseLineItemContainerRow') && bTagG &&
+                (bTagG.textContent || '').trim().toLowerCase() === 'place holder') {
+              targetRow = sib;
+              break;
+            }
+            sib = sib.nextElementSibling;
+          }
+        }
+        if (targetRow) break;
+        await _delay(150);
+      }
+
+      if (!targetRow) {
+        _log.push('⚠ editGroupPlaceHolder: Place Holder row not found in "' + groupTitle + '" group — creating new item instead');
+        await createLineItem(newTitle, unitCost);
+        return;
+      }
+
+      targetRow.click(); await _delay(800);
+      // Scoped to targetRow specifically — NOT a page-wide scan. "Place
+      // Holder" isn't unique page-wide (that's the whole reason for the
+      // group-scoped lookup above); a global querySelectorAll here would
+      // silently re-introduce the same wrong-group bug one step later.
+      var titleDisplayG = null;
+      for (var tddG = 0; tddG < 15; tddG++) {
+        titleDisplayG = targetRow.querySelector('.ValueDisplay[data-testid$=".itemTitle"]');
+        if (titleDisplayG) break;
+        await _delay(100);
+      }
+      if (titleDisplayG) { titleDisplayG.click(); await _delay(400); }
+      else { _log.push('⚠ editGroupPlaceHolder: title ValueDisplay not found for Place Holder in "' + groupTitle + '"'); }
+      var titleInpG = null;
+      for (var tiiG = 0; tiiG < 15; tiiG++) { titleInpG = document.querySelector('input[data-testid="itemTitle"]'); if (titleInpG) break; await _delay(100); }
+      if (titleInpG) {
+        writeReactValue(titleInpG, newTitle);
+        await _delay(300);
+      } else { _log.push('⚠ editGroupPlaceHolder: title input did not appear for Place Holder in "' + groupTitle + '"'); }
+      if (description) {
+        _log.push('  └ Writing Place Holder description: "' + description + '"…');
+        var descAreaG = null;
+        for (var daG = 0; daG < 30; daG++) {
+          descAreaG = document.getElementById('description')
+                   || document.querySelector('textarea[data-testid="description"]')
+                   || document.querySelector('textarea[name="description"]');
+          if (descAreaG) break;
+          await _delay(150);
+        }
+        if (descAreaG) {
+          descAreaG.scrollIntoView({ behavior:'instant', block:'center' });
+          writeReactValue(descAreaG, description);
+          await _delay(250);
+          _log.push('  ✓ Place Holder description filled into textarea');
+        } else {
+          _log.push('⚠ editGroupPlaceHolder: description textarea not found for Place Holder in "' + groupTitle + '"');
+        }
+      }
+      var costCellG = targetRow.querySelector('td[data-testid="cell-unitCost"] .ValueDisplay') ||
+                     targetRow.querySelector('td[data-testid="cell-unitCost"]');
+      if (costCellG) {
+        costCellG.click(); await _delay(400);
+        var costInpG = null;
+        for (var ciiG = 0; ciiG < 15; ciiG++) { costInpG = document.querySelector('input[data-testid="unitCost"]'); if (costInpG) break; await _delay(100); }
+        if (costInpG) {
+          costInpG.focus();
+          document.execCommand('selectAll', false, null); document.execCommand('delete', false, null);
+          document.execCommand('insertText', false, String(unitCost));
+          await _delay(300);
+        } else { _log.push('⚠ editGroupPlaceHolder: cost input did not appear for Place Holder in "' + groupTitle + '"'); }
+      } else { _log.push('⚠ editGroupPlaceHolder: cost cell not found for Place Holder in "' + groupTitle + '"'); }
+      var sideElG = document.querySelector('.ant-layout-sider, aside');
+      var saveXG = sideElG ? sideElG.getBoundingClientRect().right + 5 : 10;
+      var saveYG = window.innerHeight / 2;
+      var saveTargetG = document.elementFromPoint(saveXG, saveYG) || document.body;
+      saveTargetG.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: saveXG, clientY: saveYG })); await _delay(150);
+      saveTargetG.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: saveXG, clientY: saveYG })); await _delay(900);
+      var dirtySaveG = null;
+      for (var dsG = 0; dsG < 15; dsG++) { dirtySaveG = document.querySelector('[data-testid="dirtyTrackingSave"]'); if (dirtySaveG) break; await _delay(150); }
+      if (dirtySaveG) { dirtySaveG.click(); await _delay(800); }
+      _log.push('✓ editGroupPlaceHolder: Place Holder in "' + groupTitle + '" → "' + newTitle + '" $' + unitCost);
+    }
+
     var writeStartTime = performance.now();
+    var stopped = false;
 
     if (customItemsList && customItemsList.length) {
       _log.push('');
       _log.push('── Custom Selection Allowances ──');
       for (var ci = 0; ci < customItemsList.length; ci++) {
-        await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost);
+        if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
+        if (ci === 0) {
+          // Reuse the default "Place Holder" row instead of adding a new
+          // item alongside it — rename/reprice it in place, same as the
+          // Driveway/Landscaping Allowance edits below. Group-scoped (not
+          // editExistingItem) since "Place Holder" isn't unique page-wide.
+          await editGroupPlaceHolder('Custom Selection Allowances', customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description);
+        } else {
+          await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description);
+        }
       }
     }
 
-    for (var i = 0; i < itemsList.length; i++) {
+    for (var i = 0; !stopped && i < itemsList.length; i++) {
+      if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
       var editOpt = editableItems[itemsList[i].name];
       if (editOpt) {
         await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost);
@@ -1002,32 +1313,37 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
       }
     }
 
-    await _delay(1500);
+    if (!stopped) {
+      await _delay(1500);
 
-    if (siteOptionsList && siteOptionsList.length) {
-      _log.push('');
-      _log.push('── Site Options ──');
-      for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
-        if (siteOptionsList[si2].existingLine) continue;
-        await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
+      if (siteOptionsList && siteOptionsList.length) {
+        _log.push('');
+        _log.push('── Site Options ──');
+        for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
+          if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
+          if (siteOptionsList[si2].existingLine) continue;
+          await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
+        }
       }
     }
 
-    await _delay(1000);
+    if (!stopped) {
+      await _delay(1000);
 
-    var totalVal = 0;
-    var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
-    if (footerSpan) {
-      var footerTxt = (footerSpan.innerText || '').trim();
-      var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
-      if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
-    }
+      var totalVal = 0;
+      var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
+      if (footerSpan) {
+        var footerTxt = (footerSpan.innerText || '').trim();
+        var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
+        if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
+      }
 
-    if (totalVal > 0) {
-      _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
-      await setQty('Realtor Fees', totalVal, true);
-    } else {
-      _log.push('⚠ Could not detect estimate total for Realtor Fees');
+      if (totalVal > 0) {
+        _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
+        await setQty('Realtor Fees', totalVal, true);
+      } else {
+        _log.push('⚠ Could not detect estimate total for Realtor Fees');
+      }
     }
 
     var totalWriteTime = performance.now() - writeStartTime;
@@ -1041,7 +1357,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
     return {
       ok: _log.filter(function (l) { return l.startsWith('✓'); }).length,
       fail: _log.filter(function (l) { return l.startsWith('✗'); }).length,
-      lines: _log
+      lines: _log,
+      stopped: stopped
     };
   } catch (e) {
     return { ok: 0, fail: 1, lines: ['✗ Script error: ' + e.message] };
@@ -1052,8 +1369,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList) 
 // Client Preview flow — runs in the chosen tab via
 // chrome.scripting.executeScript (same as popup.js)
 // ═══════════════════════════════════════════════════════════
-async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
-  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+async function selectTabForClientPreview(tab, titleEl, statusEl, logEl, slowConnection) {
+  function delay(ms) { return new Promise(function (r) { setTimeout(r, slowConnection ? ms * 2 : ms); }); }
 
   titleEl.textContent = 'Client Preview: ' + (tab.title || tab.url);
   statusEl.className = 'progress-status';
@@ -1078,68 +1395,240 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     var tabId = tab.id;
 
     // Step 0: Read grand total from estimate footer (before navigating away)
+    // Polls instead of a single querySelector — this tab was just force-reloaded
+    // (Option B fix) and BT's grid can take several seconds to fetch/render the
+    // footer after a fresh load, so a one-shot read can race the page and
+    // silently return 0, which skips the entire editor-fill/PUT/Save block below.
+    // popup.js's runClientPreviewFlow never reloads its tab first, so it never
+    // hits this race — that's why this file needs the poll and popup.js doesn't.
     log('Reading estimate grand total…');
     var _totalRes = await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
-      func: function() {
-        var span = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
-        if (!span) return 0;
-        var txt = (span.innerText || '').trim();
-        var m = txt.match(/^\$([\d,]+\.?\d*)$/);
-        return m ? parseFloat(m[1].replace(/,/g, '')) : 0;
-      }
+      func: async function(slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+        var waited = 0;
+        while (waited < 10000) {
+          var span = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
+          if (span) {
+            var txt = (span.innerText || '').trim();
+            var m = txt.match(/^\$([\d,]+\.?\d*)$/);
+            if (m) {
+              var val = parseFloat(m[1].replace(/,/g, ''));
+              if (val > 0) return val;
+            }
+          }
+          await delay(300);
+          waited += 300;
+        }
+        return 0;
+      },
+      args: [slowConnection]
     });
     var _grandTotal = (_totalRes && _totalRes[0] && _totalRes[0].result) || 0;
     if (_grandTotal > 0) log('Grand total: $' + _grandTotal.toLocaleString('en-US'));
     else log('Warning: grand total not found — budget range will be skipped');
 
+    // Step 0.5: Check the Estimate grid (before Build Proposal is clicked) for
+    // (a) "Preferred Lender Incentive" qty > 0, and (b) any real item already
+    // written under "Custom Selection Allowances". These feed the group-expand
+    // step below as EXTRA reasons to expand a section — additive to, not a
+    // replacement for, the existing rendered-panel-title check there.
+    log('Checking estimate for lender/custom-allowance items…');
+    var _estFlagsRes = await chrome.scripting.executeScript({
+      target: { tabId: tabId }, world: 'MAIN',
+      func: async function(slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+        function findWorksheetSearchBar() {
+          var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
+            return (b.textContent || '').includes('Collapse all');
+          });
+          if (collapseBtn) {
+            var el = collapseBtn;
+            while (el && el !== document.body) {
+              var inp = el.querySelector('input[role="combobox"].ant-select-selection-search-input');
+              if (inp) return inp;
+              el = el.parentElement;
+            }
+          }
+          return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
+        }
+        var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        var flags = { lenderQtyPositive: false, customHasItems: false, debug: {} };
+
+        // (a) Preferred Lender Incentive quantity — the estimate grid is
+        // virtualized, so a row not currently scrolled into view doesn't exist
+        // in the DOM at all. Search + click the result first (same lookup
+        // editExistingItem uses) to scroll it into view, THEN scan for the row.
+        // Qty itself is shown inside a popup, not as plain text — open it, read
+        // the spinbutton's current value, then Escape to close without saving.
+        var si = findWorksheetSearchBar();
+        flags.debug.searchBarFound = !!si;
+        if (si) {
+          var cont = si.closest('.ant-select-selector') || si.parentElement;
+          if (cont) { cont.click(); await delay(200); }
+          si.focus(); await delay(100);
+          nativeSetter.call(si, 'Preferred Lender Incentive');
+          si.dispatchEvent(new Event('input', { bubbles: true }));
+          si.dispatchEvent(new Event('change', { bubbles: true }));
+          await delay(900);
+          var searchResult = null;
+          var resultEls = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+          for (var ri = 0; ri < resultEls.length; ri++) {
+            if ((resultEls[ri].innerText || '').trim().toLowerCase() === 'preferred lender incentive') { searchResult = resultEls[ri]; break; }
+          }
+          flags.debug.lenderSearchResultFound = !!searchResult;
+          if (searchResult) {
+            searchResult.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            searchResult.click();
+            await delay(1000);
+          }
+          nativeSetter.call(si, '');
+          si.dispatchEvent(new Event('input', { bubbles: true }));
+          si.dispatchEvent(new Event('change', { bubbles: true }));
+          await delay(400);
+        }
+
+        var lenderRow = null;
+        for (var lri = 0; lri < 20; lri++) {
+          var bTags = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+          for (var bi = 0; bi < bTags.length; bi++) {
+            if ((bTags[bi].textContent || '').trim().toLowerCase() === 'preferred lender incentive') {
+              lenderRow = bTags[bi].closest('tr.proposalBaseLineItemContainerRow');
+              break;
+            }
+          }
+          if (lenderRow) break;
+          await delay(150);
+        }
+        flags.debug.lenderRowFound = !!lenderRow;
+        if (lenderRow) {
+          lenderRow.click();
+          await delay(500);
+          var titleDisplay = null;
+          var tDisplays = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
+          for (var ti = 0; ti < tDisplays.length; ti++) {
+            if ((tDisplays[ti].textContent || '').trim().toLowerCase() === 'preferred lender incentive') { titleDisplay = tDisplays[ti]; break; }
+          }
+          flags.debug.titleDisplayFound = !!titleDisplay;
+          if (titleDisplay) {
+            titleDisplay.click();
+            await delay(400);
+            var qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
+                        || document.querySelector('input[role="spinbutton"]')
+                        || document.querySelector('input.ant-input-number-input');
+            if (qtyInput) {
+              var qv = parseFloat(qtyInput.value);
+              flags.debug.qtyRead = qtyInput.value;
+              flags.lenderQtyPositive = !isNaN(qv) && qv > 0;
+            } else {
+              flags.debug.qtyRead = 'input not found';
+            }
+            document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+            if (document.activeElement) document.activeElement.blur();
+            document.body.click();
+            await delay(200);
+          }
+        }
+
+        // (b) Custom Selection Allowances — same search-and-reveal step
+        // createLineItem uses to find the group's "+" button, then walk
+        // sibling rows after the group header until the next group header.
+        var si2 = findWorksheetSearchBar();
+        flags.debug.groupSearchBarFound = !!si2;
+        if (si2) {
+          var cont2 = si2.closest('.ant-select-selector') || si2.parentElement;
+          if (cont2) { cont2.click(); await delay(200); }
+          si2.focus(); await delay(100);
+          nativeSetter.call(si2, 'Custom Selection Allowances');
+          si2.dispatchEvent(new Event('input', { bubbles: true }));
+          si2.dispatchEvent(new Event('change', { bubbles: true }));
+          await delay(900);
+          var liResult = null;
+          var bTagsSearch = document.querySelectorAll('b');
+          for (var lbi = 0; lbi < bTagsSearch.length; lbi++) {
+            if ((bTagsSearch[lbi].textContent || '').trim().toLowerCase() === 'custom selection allowances') { liResult = bTagsSearch[lbi]; break; }
+          }
+          if (!liResult) {
+            var liItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+            for (var lii = 0; lii < liItems.length; lii++) {
+              if ((liItems[lii].innerText || '').toLowerCase().includes('custom selection allowances')) { liResult = liItems[lii]; break; }
+            }
+          }
+          flags.debug.customSearchResultFound = !!liResult;
+          if (liResult) {
+            var liClick = liResult.closest('.LineItemResult') || liResult.closest('[class*="Result"]') || liResult;
+            liClick.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            liClick.click();
+            await delay(700);
+          }
+          nativeSetter.call(si2, '');
+          si2.dispatchEvent(new Event('input', { bubbles: true }));
+          si2.dispatchEvent(new Event('change', { bubbles: true }));
+          await delay(400);
+        }
+
+        var groupRow = null;
+        for (var gri = 0; gri < 20; gri++) {
+          var groupActionRows = document.querySelectorAll('.WorksheetGroupCellActions');
+          for (var gi = 0; gi < groupActionRows.length; gi++) {
+            var gTitleEl = groupActionRows[gi].querySelector('.proposalFormatGroupCellTitle');
+            if (gTitleEl && (gTitleEl.textContent || '').trim().toLowerCase() === 'custom selection allowances') {
+              groupRow = groupActionRows[gi].closest('tr') || groupActionRows[gi];
+              break;
+            }
+          }
+          if (groupRow) break;
+          await delay(150);
+        }
+        flags.debug.groupRowFound = !!groupRow;
+        if (groupRow) {
+          var sib = groupRow.nextElementSibling;
+          var foundNames = [];
+          while (sib) {
+            var nextGroupTitle = sib.querySelector && sib.querySelector('.proposalFormatGroupCellTitle');
+            if (nextGroupTitle) break;
+            var bTag = sib.querySelector && sib.querySelector('b');
+            if (sib.matches && sib.matches('tr.proposalBaseLineItemContainerRow') && bTag) {
+              var itemName = (bTag.textContent || '').trim();
+              if (itemName && !/^place\s*holder$/i.test(itemName)) foundNames.push(itemName);
+            }
+            sib = sib.nextElementSibling;
+          }
+          flags.debug.customItemNames = foundNames;
+          flags.customHasItems = foundNames.length > 0;
+        }
+
+        return flags;
+      },
+      args: [slowConnection]
+    });
+    var _estFlags = (_estFlagsRes && _estFlagsRes[0] && _estFlagsRes[0].result) || { lenderQtyPositive: false, customHasItems: false };
+    log('Estimate check: lender qty>0=' + _estFlags.lenderQtyPositive + ', custom allowance items=' + _estFlags.customHasItems + ' ' + JSON.stringify(_estFlags.debug || {}));
+
     // Step 1: Click buildProposal button
+    // Same post-reload race as Step 0 — poll for the button instead of a single read.
     log('Opening proposal builder…');
     setStatus('Opening proposal…');
-    // Snapshot resource count BEFORE clicking — the tab picker lets you pick any
-    // already-open tab, which may carry resource-timing entries from a DIFFERENT
-    // job's proposal viewed earlier in the session. Scanning from the start would
-    // grab that stale jobId. Only scan entries added after this click (see
-    // SITE-ALLOWANCES-BUG-EXPLANATION.md / Client Preview FormatNotSavingFixes.md).
-    var _preClickCount = await chrome.scripting.executeScript({
-      target: { tabId: tabId }, world: 'MAIN',
-      func: function () { return performance.getEntriesByType('resource').length; }
-    });
-    var _preCount = (_preClickCount && _preClickCount[0] && _preClickCount[0].result) || 0;
     var _buildBtnRes = await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
-      func: async function() {
-        var btn = document.querySelector('[data-testid="buildProposal"]');
-        if (btn) { btn.click(); return { found: true }; }
+      func: async function(slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+        var waited = 0;
+        while (waited < 10000) {
+          var btn = document.querySelector('[data-testid="buildProposal"]');
+          if (btn) { btn.click(); return { found: true }; }
+          await delay(300);
+          waited += 300;
+        }
         return { found: false, url: window.location.href };
-      }
+      },
+      args: [slowConnection]
     });
     var _buildBtnStatus = _buildBtnRes && _buildBtnRes[0] && _buildBtnRes[0].result;
     if (_buildBtnStatus && !_buildBtnStatus.found) {
       log('⚠ "Build Proposal" button not found on this tab (url: ' + _buildBtnStatus.url + ') — make sure the picked tab is on the estimate page for this job');
     }
-
-    // Poll for the NEW draft request (most-recent-first) so we capture THIS
-    // job's jobId, not a stale one from an earlier proposal viewed in this tab.
-    var _proposalJobId = null;
-    for (var _pw = 0; _pw < 17; _pw++) {
-      await delay(150);
-      var _jobIdRes = await chrome.scripting.executeScript({
-        target: { tabId: tabId }, world: 'MAIN',
-        func: function (startIdx) {
-          var resources = performance.getEntriesByType('resource');
-          for (var ri = resources.length - 1; ri >= startIdx; ri--) {
-            var m = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-            if (m) return m[1];
-          }
-          return null;
-        },
-        args: [_preCount]
-      });
-      _proposalJobId = _jobIdRes && _jobIdRes[0] && _jobIdRes[0].result;
-      if (_proposalJobId) break;
-    }
-    log('Proposal jobId: ' + (_proposalJobId || 'not found — will fall back to scanning all resources'));
+    await delay(2500);
 
     // Step 1.5: Fill editor1 (intro) and editor2 (closing) via CKEditor API
     if (_grandTotal > 0) {
@@ -1147,6 +1636,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
       setStatus('Writing proposal text…');
       var _lowFmt  = '$' + Math.round(_grandTotal * 0.99).toLocaleString('en-US');
       var _highFmt = '$' + Math.round(_grandTotal * 1.10).toLocaleString('en-US');
+      var _midFmt  = '$' + Math.round(_grandTotal).toLocaleString('en-US');
 
       // Read sales notes from SALES NOTES sheet tab
       var _salesNotesText = '';
@@ -1181,6 +1671,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         '<tbody><tr><td style="text-align: center;">',
         '<h3><span style="font-size:16px;"><strong>ESTIMATED BUDGET RANGE</strong></span></h3>',
         '<h1><span style="font-size:28px;"><strong>' + _lowFmt + ' &ndash; ' + _highFmt + '</strong></span></h1>',
+        '<p><span style="font-size:16px;"><strong>MIDPOINT: ' + _midFmt + '</strong></span></p>',
         '</td></tr></tbody></table>',
         _notesBlock,
         '&nbsp;',
@@ -1254,8 +1745,9 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
       ].join('');
       var _editorResult = await chrome.scripting.executeScript({
         target: { tabId: tabId }, world: 'MAIN',
-        func: async function(introHtml, closingHtml, knownJobId) {
-          function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+        func: async function(introHtml, closingHtml, slowConnection) {
+          function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+          var _dbg = { ckEditors: 0, jobId: null, getOk: null, putStatus: null, branch: null };
           var titleInput = document.querySelector('#title[data-testid="title"]');
           if (titleInput) {
             var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -1270,9 +1762,10 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             await delay(300);
             waited += 300;
           }
-          if (!window.CKEDITOR) return;
+          if (!window.CKEDITOR) { _dbg.branch = 'no-ckeditor'; return _dbg; }
           var editorKeys = Object.keys(CKEDITOR.instances);
-          if (editorKeys.length < 2) return;
+          _dbg.ckEditors = editorKeys.length;
+          if (editorKeys.length < 2) { _dbg.branch = 'too-few-editors'; return _dbg; }
           var editorA = CKEDITOR.instances[editorKeys[0]];
           var editorB = CKEDITOR.instances[editorKeys[1]];
 
@@ -1280,18 +1773,17 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
           editorB.setData(closingHtml);
           await delay(300);
 
-          var jobId = knownJobId || null;
-          if (!jobId) {
-            var resources = performance.getEntriesByType('resource');
-            for (var ri = resources.length - 1; ri >= 0; ri--) {
-              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (rm) { jobId = rm[1]; break; }
-            }
+          var jobId = null;
+          var resources = performance.getEntriesByType('resource');
+          for (var ri = 0; ri < resources.length; ri++) {
+            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (rm) { jobId = rm[1]; break; }
           }
+          _dbg.jobId = jobId;
 
-          console.log('[Duke] jobId found:', jobId);
+          console.log('[Keel] jobId found:', jobId);
           if (jobId) {
-            console.log('[Duke] GETting current draft via XHR...');
+            console.log('[Keel] GETting current draft via XHR...');
             var draft = await new Promise(function(resolve) {
               var xhr = new XMLHttpRequest();
               xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
@@ -1305,12 +1797,15 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
               xhr.onerror = function() { resolve(null); };
               xhr.send();
             });
+            _dbg.getOk = !!draft;
             if (!draft) {
-              console.log('[Duke] GET failed — falling back to Save button');
+              console.log('[Keel] GET failed — falling back to Save button');
+              _dbg.branch = 'no-draft-savebtn';
               var saveBtn = document.querySelector('[data-testid="save"]');
               if (saveBtn) { saveBtn.click(); await delay(3000); }
             } else {
-              console.log('[Duke] GET ok');
+              console.log('[Keel] GET ok');
+              _dbg.branch = 'full-put';
               var putBody = {};
               Object.keys(draft).forEach(function(k) {
                 if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) {
@@ -1351,7 +1846,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
               putBody.introductionText = introHtml;
               putBody.closingText = closingHtml;
               var bodyStr = JSON.stringify(putBody);
-              console.log('[Duke] Sending via XHR, body size:', bodyStr.length);
+              console.log('[Keel] Sending via XHR, body size:', bodyStr.length);
 
               var xhrStatus = await new Promise(function(resolve) {
                 var xhr = new XMLHttpRequest();
@@ -1360,37 +1855,38 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
                 xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
                 xhr.setRequestHeader('portaltype', '1');
                 xhr.onload = function() {
-                  console.log('[Duke] XHR status:', xhr.status, xhr.responseText);
+                  console.log('[Keel] XHR status:', xhr.status, xhr.responseText);
                   resolve(xhr.status);
                 };
-                xhr.onerror = function() { console.log('[Duke] XHR error'); resolve(0); };
+                xhr.onerror = function() { console.log('[Keel] XHR error'); resolve(0); };
                 xhr.send(bodyStr);
               });
+              _dbg.putStatus = xhrStatus;
               await delay(1500);
               editorA.setData(introHtml);
               editorB.setData(closingHtml);
               await delay(300);
             }
           } else {
-            console.log('[Duke] jobId NOT found — falling back to Save button');
+            console.log('[Keel] jobId NOT found — falling back to Save button');
+            _dbg.branch = 'no-jobid-savebtn';
             var saveBtn2 = document.querySelector('[data-testid="save"]');
             if (saveBtn2) { saveBtn2.click(); await delay(3000); }
           }
+          return _dbg;
         },
-        args: [_introHtml, _closingHtml, _proposalJobId]
+        args: [_introHtml, _closingHtml, slowConnection]
       });
       var _saveResult = _editorResult && _editorResult[0] && _editorResult[0].result;
       log('Proposal save result: ' + JSON.stringify(_saveResult));
       await chrome.scripting.executeScript({
         target: { tabId: tabId }, world: 'MAIN',
-        func: async function(knownJobId) {
-          var jobId = knownJobId || null;
-          if (!jobId) {
-            var resources = performance.getEntriesByType('resource');
-            for (var ri = resources.length - 1; ri >= 0; ri--) {
-              var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
-              if (rm) { jobId = rm[1]; break; }
-            }
+        func: async function() {
+          var resources = performance.getEntriesByType('resource');
+          var jobId = null;
+          for (var ri = 0; ri < resources.length; ri++) {
+            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (rm) { jobId = rm[1]; break; }
           }
           if (!jobId) return;
           var xhr = new XMLHttpRequest();
@@ -1402,11 +1898,10 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             try {
               var d = JSON.parse(xhr.responseText);
               var intro = (d.proposal && d.proposal.introductionText) || '';
-              console.log('[Duke] Verify GET introductionText starts with:', intro.slice(0, 80));
+              console.log('[Keel] Verify GET introductionText starts with:', intro.slice(0, 80));
             } catch(e) {}
           }
-        },
-        args: [_proposalJobId]
+        }
       });
       await delay(2000);
       await chrome.scripting.executeScript({
@@ -1417,23 +1912,158 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             var wrapper = cb.closest('.ant-checkbox-wrapper');
             if (wrapper && wrapper.classList.contains('ant-checkbox-wrapper-checked')) {
               cb.click();
-              console.log('[Duke] Unchecked requireSignatures');
+              console.log('[Keel] Unchecked requireSignatures');
             }
           }
         }
       });
+
+      // Click BT's own Save button before reloading — the raw PUT patches the
+      // draft record, but Save may be what triggers BT to regenerate whatever
+      // rendered/published snapshot the Client Preview tab actually reads from.
+      log('Clicking Save…');
+      setStatus('Saving…');
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId }, world: 'MAIN',
+        func: function() {
+          var saveBtn = document.querySelector('[data-testid="save"]');
+          if (saveBtn) { saveBtn.click(); return { found: true }; }
+          return { found: false };
+        }
+      });
+      await delay(2000);
+
+      // Lock our text back in AFTER Save — BT's own Save handler may read
+      // introductionText/closingText from a React/Redux copy that was
+      // hydrated when "Build Proposal" first loaded (before our PUT ever
+      // ran), not from CKEditor's live buffer. If so, clicking Save just
+      // overwrote our earlier PUT with stale/default text, and the reload
+      // below would only reveal that corruption. Re-run the same full
+      // GET -> PUT with our HTML, last, right before the reload, so our
+      // text is guaranteed to be what the server actually holds afterward.
+      log('Locking proposal text after Save…');
+      var _lockResult = await chrome.scripting.executeScript({
+        target: { tabId: tabId }, world: 'MAIN',
+        func: async function(introHtml, closingHtml, slowConnection) {
+          function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+          var _lockDbg = { jobId: null, getOk: null, putStatus: null, verifyLen: null };
+          var jobId = null;
+          var resources = performance.getEntriesByType('resource');
+          for (var ri = 0; ri < resources.length; ri++) {
+            var rm = resources[ri].name.match(/\/apix\/v2\/Proposals\/draft\?jobId=(\d+)/);
+            if (rm) { jobId = rm[1]; break; }
+          }
+          _lockDbg.jobId = jobId;
+          if (!jobId) return _lockDbg;
+
+          var draft = await new Promise(function(resolve) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
+            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+            xhr.setRequestHeader('portaltype', '1');
+            xhr.onload = function() {
+              if (xhr.status === 200) { try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); } }
+              else resolve(null);
+            };
+            xhr.onerror = function() { resolve(null); };
+            xhr.send();
+          });
+          _lockDbg.getOk = !!draft;
+          if (!draft) return _lockDbg;
+
+          var putBody = {};
+          Object.keys(draft).forEach(function(k) {
+            if (draft[k] && typeof draft[k] === 'object' && !Array.isArray(draft[k])) {
+              Object.assign(putBody, draft[k]);
+            }
+          });
+          if (!('categories' in putBody) && putBody.formatItems) putBody.categories = putBody.formatItems;
+          if (!('formatOptions' in putBody)) {
+            var dOpts = putBody.displayOptions || {};
+            var pConf = putBody.proposalDisplayConfig || {};
+            putBody.formatOptions = {
+              body: dOpts.body, header: dOpts.header, printoutType: dOpts.printoutType,
+              includeSpecs: dOpts.includeSpecs || false, showAddress: putBody.showAddress || false,
+              showOwnerContactInfo: putBody.showOwnerContactInfo || false, showPrintoutInfo: putBody.showPrintoutInfo || false,
+              proposalLayout: pConf.proposalLayout != null ? pConf.proposalLayout : 0,
+              hasSingleSelectCostTypes: pConf.hasSingleSelectCostTypes || false
+            };
+          }
+          if (Array.isArray(putBody.categories)) {
+            putBody.categories.forEach(function(cat) { if (cat.items && !cat.lineItems) { cat.lineItems = cat.items; delete cat.items; } });
+          }
+          putBody.requireSignatures = false;
+          putBody.requiredSignatureUsers = [];
+          if (putBody.columnsToDisplay && Array.isArray(putBody.columnsToDisplay.value)) putBody.columnsToDisplay = putBody.columnsToDisplay.value;
+          putBody.introductionText = introHtml;
+          putBody.closingText = closingHtml;
+          var bodyStr = JSON.stringify(putBody);
+
+          var xhrStatus = await new Promise(function(resolve) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('PUT', '/apix/v2/Proposals/draft?jobId=' + jobId, true);
+            xhr.setRequestHeader('content-type', 'application/merge-patch+json');
+            xhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+            xhr.setRequestHeader('portaltype', '1');
+            xhr.onload = function() { resolve(xhr.status); };
+            xhr.onerror = function() { resolve(0); };
+            xhr.send(bodyStr);
+          });
+          _lockDbg.putStatus = xhrStatus;
+          await delay(800);
+
+          var vxhr = new XMLHttpRequest();
+          vxhr.open('GET', '/apix/v2/Proposals/draft?jobId=' + jobId, false);
+          vxhr.setRequestHeader('accept', 'application/json, text/plain, */*');
+          vxhr.setRequestHeader('portaltype', '1');
+          vxhr.send();
+          if (vxhr.status === 200) {
+            try {
+              var vd = JSON.parse(vxhr.responseText);
+              var vIntro = (vd.proposal && vd.proposal.introductionText) || '';
+              _lockDbg.verifyLen = vIntro.length;
+            } catch(e) {}
+          }
+          return _lockDbg;
+        },
+        args: [_introHtml, _closingHtml, slowConnection]
+      });
+      var _lockDbgResult = _lockResult && _lockResult[0] && _lockResult[0].result;
+      log('Lock result: ' + JSON.stringify(_lockDbgResult));
+
+      // The proposal page's React app still holds the pre-save proposal object
+      // in memory (fetched when "Build Proposal" was first clicked, before our
+      // PUT ever ran). Reload — focusing the tab first so the reload isn't
+      // throttled in the background — so BT re-fetches fresh data (including
+      // what we just saved) before we switch to the Client Preview tab.
+      log('Reloading proposal page to sync saved text…');
+      setStatus('Reloading proposal page…');
+      await chrome.tabs.update(tabId, { active: true });
+      await delay(200);
+      await chrome.tabs.reload(tabId);
+      await new Promise(function (resolve) {
+        function checkStatus() {
+          chrome.tabs.get(tabId, function (t) {
+            if (t && t.status === 'complete') { resolve(); } else { setTimeout(checkStatus, slowConnection ? 600 : 300); }
+          });
+        }
+        setTimeout(checkStatus, slowConnection ? 1600 : 800);
+      });
+      await delay(2500);
     }
 
     // Step 2: Click Client Preview tab
     log('Navigating to client preview…');
     var previewResult = await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
-      func: async function() {
-        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      func: async function(slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
         function waitFor(fn, ms) {
           return new Promise(function(res, rej) {
-            var end = Date.now() + (ms || 6000);
-            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
+            var budget = ms || 6000;
+            if (slowConnection) budget *= 2;
+            var end = Date.now() + budget;
+            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, slowConnection ? 300 : 150); })();
           });
         }
         var tabEl = await waitFor(function() {
@@ -1443,7 +2073,8 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         if (!tabEl) return { ok: false, error: 'Client Preview tab not found' };
         tabEl.click();
         return { ok: true };
-      }
+      },
+      args: [slowConnection]
     });
     var pr = previewResult && previewResult[0] && previewResult[0].result;
     if (pr && !pr.ok) throw new Error(pr.error || 'Could not open client preview');
@@ -1454,12 +2085,14 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     setStatus('Setting display…');
     await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
-      func: async function() {
-        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      func: async function(slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
         function waitFor(fn, ms) {
           return new Promise(function(res, rej) {
-            var end = Date.now() + (ms || 5000);
-            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, 150); })();
+            var budget = ms || 5000;
+            if (slowConnection) budget *= 2;
+            var end = Date.now() + budget;
+            (function tick(){ var v = fn(); if (v) return res(v); if (Date.now() > end) return rej(new Error('timeout')); setTimeout(tick, slowConnection ? 300 : 150); })();
           });
         }
 
@@ -1499,7 +2132,8 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         var existing = Array.from(document.querySelectorAll('.ant-select-selection-item-content')).map(function(el){ return el.textContent.trim().toLowerCase(); });
         if (!existing.includes('item title'))   await addOption('Item title');
         if (!existing.includes('description'))  await addOption('Description');
-      }
+      },
+      args: [slowConnection]
     });
     await delay(1000);
 
@@ -1508,15 +2142,65 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
     setStatus('Configuring groups…');
     await chrome.scripting.executeScript({
       target: { tabId: tabId }, world: 'MAIN',
-      func: async function() {
-        function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+      func: async function(estLenderQty, estCustomItems, slowConnection) {
+        function delay(ms) { return new Promise(function(r){ setTimeout(r, slowConnection ? ms * 2 : ms); }); }
+        function parseGroupName(raw) {
+          var m = raw.match(/^(.*?)\s*\((\d+)\)\s*$/);
+          return m ? { name: m[1].trim(), count: parseInt(m[2], 10) } : { name: raw, count: 0 };
+        }
+        async function groupHasRealItems(panelEl) {
+          var wasCollapsed = !panelEl.classList.contains('ant-collapse-item-active');
+          if (wasCollapsed) {
+            var hdr = panelEl.querySelector('.ant-collapse-header');
+            if (hdr) { hdr.click(); await delay(300); }
+          }
+          var rows = panelEl.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+          var hasReal = false;
+          if (rows.length) {
+            for (var r = 0; r < rows.length; r++) {
+              var t = (rows[r].textContent || '').trim().toLowerCase();
+              if (t && !/^place\s*holder$/i.test(t)) { hasReal = true; break; }
+            }
+          } else {
+            // Fallback if the row selector doesn't match this page's markup:
+            // strip "Place Holder" occurrences and see if meaningful text remains.
+            var txt = (panelEl.textContent || '').replace(/place\s*holder/gi, '').trim();
+            hasReal = txt.length > 40;
+          }
+          return hasReal;
+        }
+
         var KEEP_EXPANDED = ['selection allowances', 'site allowances'];
+
+        // Estimate-grid-based checks (Step 0.5, read before Build Proposal was
+        // clicked) — ADDED ON TOP of the rendered-panel-title check below, not
+        // a replacement for it. Either signal is enough to force-expand.
+        if (estLenderQty && KEEP_EXPANDED.indexOf('preferred lender incentive') === -1) {
+          KEEP_EXPANDED.push('preferred lender incentive');
+        }
+        if (estCustomItems && KEEP_EXPANDED.indexOf('custom selection allowances') === -1) {
+          KEEP_EXPANDED.push('custom selection allowances');
+        }
+
+        var precheckItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup'));
+        for (var pi = 0; pi < precheckItems.length; pi++) {
+          var nEl = precheckItems[pi].querySelector('h3.ant-typography');
+          var raw = nEl ? nEl.textContent.trim().toLowerCase() : '';
+          var parsed = parseGroupName(raw);
+          if (parsed.count > 0 && parsed.name === 'preferred lender incentive') {
+            if (KEEP_EXPANDED.indexOf(parsed.name) === -1) KEEP_EXPANDED.push(parsed.name);
+          }
+          if (parsed.count > 0 && parsed.name === 'custom selection allowances') {
+            var hasRealItems = await groupHasRealItems(precheckItems[pi]);
+            if (hasRealItems && KEEP_EXPANDED.indexOf(parsed.name) === -1) KEEP_EXPANDED.push(parsed.name);
+          }
+        }
 
         var expandedItems = Array.from(document.querySelectorAll('.ant-collapse-item.ProposalGroup.ant-collapse-item-active'));
         for (var i = 0; i < expandedItems.length; i++) {
           var nameEl = expandedItems[i].querySelector('h3.ant-typography');
           var name = nameEl ? nameEl.textContent.trim().toLowerCase() : '';
-          var cleanName = name.replace(/\s*\(1\)\s*$/, '');
+          var cleanName = parseGroupName(name).name;
           var keep = KEEP_EXPANDED.some(function(k) { return cleanName === k; });
           if (!keep) {
             var header = expandedItems[i].querySelector('.ant-collapse-header');
@@ -1528,7 +2212,7 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
         for (var j = 0; j < allItems.length; j++) {
           var nameEl2 = allItems[j].querySelector('h3.ant-typography');
           var name2 = nameEl2 ? nameEl2.textContent.trim().toLowerCase() : '';
-          var cleanName2 = name2.replace(/\s*\(1\)\s*$/, '');
+          var cleanName2 = parseGroupName(name2).name;
           var shouldExpand = KEEP_EXPANDED.some(function(k) { return cleanName2 === k; });
           if (shouldExpand) {
             var isCollapsed = !allItems[j].classList.contains('ant-collapse-item-active');
@@ -1538,7 +2222,8 @@ async function selectTabForClientPreview(tab, titleEl, statusEl, logEl) {
             }
           }
         }
-      }
+      },
+      args: [_estFlags.lenderQtyPositive, _estFlags.customHasItems, slowConnection]
     });
     await delay(800);
 
