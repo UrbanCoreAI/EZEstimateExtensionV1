@@ -1,4 +1,4 @@
-// Duke Estimating - Options Page Script
+// Keel EZ Estimate - Options Page Script
 
 function $(id) { return document.getElementById(id); }
 
@@ -125,6 +125,85 @@ $('btn-test-gemini').addEventListener('click', async () => {
     showStatus(`Network error: ${e.message}`, 'error');
   }
 });
+
+// ── Auto Update folder setup ─────────────────────────────────────────────
+
+async function refreshUpdateFolderStatus() {
+  const statusBox = $('update-folder-status');
+  const reauthBtn = $('btn-reauth-update-folder');
+  const clearBtn = $('btn-clear-update-folder');
+  const M = window.EZUpdateManager;
+
+  if (!M) { statusBox.textContent = 'Update system failed to load on this page.'; return; }
+
+  const handle = await M.getDirectoryHandle();
+  if (!handle) {
+    statusBox.innerHTML = '<strong>No folder set yet.</strong> Click "Set update folder" and choose the folder your unpacked extension lives in.';
+    reauthBtn.classList.add('hidden');
+    clearBtn.classList.add('hidden');
+    return;
+  }
+
+  const permission = await M.queryFolderPermission(handle);
+  if (permission === 'granted') {
+    try {
+      await M.verifyFolderExists(handle);
+      statusBox.innerHTML = '<strong>✓ Update folder set and ready</strong> — "' + (handle.name || 'folder') + '". Updates will be written here.';
+      reauthBtn.classList.add('hidden');
+    } catch (e) {
+      statusBox.innerHTML = '<strong>⚠ Folder not found.</strong> "' + (handle.name || 'folder') + '" may have been renamed, moved, or deleted. Click "Set update folder" to pick it again.';
+      reauthBtn.classList.add('hidden');
+    }
+  } else {
+    statusBox.innerHTML = '<strong>⚠ Permission needs to be re-granted</strong> for "' + (handle.name || 'folder') + '".';
+    reauthBtn.classList.remove('hidden');
+  }
+  clearBtn.classList.remove('hidden');
+}
+
+$('btn-set-update-folder').addEventListener('click', async () => {
+  const M = window.EZUpdateManager;
+  if (!M) { showStatus('Update system failed to load.', 'error'); return; }
+  if (!window.showDirectoryPicker) {
+    showStatus('Your Chrome version does not support folder access (File System Access API).', 'error');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await M.setDirectoryHandle(handle);
+    showStatus('✓ Update folder set to "' + handle.name + '"', 'success');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // user cancelled the picker
+    showStatus('Could not set update folder: ' + e.message, 'error');
+  }
+  refreshUpdateFolderStatus();
+});
+
+$('btn-reauth-update-folder').addEventListener('click', async () => {
+  const M = window.EZUpdateManager;
+  const handle = await M.getDirectoryHandle();
+  if (!handle) { showStatus('No folder set yet — click "Set update folder" first.', 'error'); return; }
+  try {
+    const result = await M.requestFolderPermission(handle);
+    if (result === 'granted') {
+      showStatus('✓ Permission re-granted', 'success');
+    } else {
+      showStatus('Permission was not granted.', 'error');
+    }
+  } catch (e) {
+    showStatus('Could not request permission: ' + e.message, 'error');
+  }
+  refreshUpdateFolderStatus();
+});
+
+$('btn-clear-update-folder').addEventListener('click', async () => {
+  const M = window.EZUpdateManager;
+  await M.clearDirectoryHandle();
+  showStatus('Update folder forgotten — updates disabled until you set one again.', 'info');
+  refreshUpdateFolderStatus();
+});
+
+refreshUpdateFolderStatus();
 
 // External links
 $('link-openai').addEventListener('click', e => { e.preventDefault(); chrome.tabs.create({ url: 'https://platform.openai.com/api-keys' }); });

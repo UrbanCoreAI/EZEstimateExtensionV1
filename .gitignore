@@ -1,4 +1,5 @@
 node_modules/
-lib/
+lib/*
+!lib/fflate.umd.js
 *.zip
 extension_key.pem

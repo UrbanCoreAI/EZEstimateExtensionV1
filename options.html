@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Duke Estimating - Settings</title>
+  <title>Keel EZ Estimate - Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <div class="page">
     <div class="header">
-      <span class="logo">D</span>
+      <span class="logo" style="font-size:11px;letter-spacing:-0.5px;">EZ</span>
       <div>
-        <h1>Duke Estimating Settings</h1>
+        <h1>Keel EZ Estimate Settings</h1>
         <p>Configure your Google Sheets &amp; AI integration</p>
       </div>
     </div>
@@ -75,6 +75,18 @@
       </div>
     </section>
 
+    <!-- Auto Update -->
+    <section class="card">
+      <h2>🔄 Auto-Update <span class="badge">One-time setup</span></h2>
+      <p class="help">Grant the extension write access to a folder, and the popup's "Check for Updates" button can pull and apply new versions on its own — no more re-loading the unpacked folder by hand. This permission grant must happen here, in a full tab; Chrome closes the popup the instant this picker opens.</p>
+      <div id="update-folder-status" class="info-box" style="margin-bottom:14px;">Checking current status…</div>
+      <div class="actions">
+        <button id="btn-set-update-folder" class="btn-primary">Set update folder</button>
+        <button id="btn-reauth-update-folder" class="btn-secondary hidden">Re-authorize access</button>
+        <button id="btn-clear-update-folder" class="btn-ghost hidden">Forget folder</button>
+      </div>
+    </section>
+
     <!-- Sheet Config -->
     <section class="card">
       <h2>📋 Google Sheet Configuration</h2>
@@ -97,6 +109,7 @@
     </div>
   </div>
 
+  <script src="update-manager.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

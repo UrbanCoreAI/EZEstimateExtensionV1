@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Duke Estimating Sync</title>
+  <title>Keel EZ Estimate Sync</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="header">
     <div class="header-left">
-      <span class="logo">D</span>
+      <span class="logo" style="font-size:11px;letter-spacing:-0.5px;">EZ</span>
       <div>
-        <div class="title">Duke Estimating</div>
+        <div class="title">Keel EZ Estimate</div>
         <div class="subtitle">BuilderTrend → Sheets Sync</div>
       </div>
     </div>
@@ -19,6 +19,13 @@
 
   <!-- Status bar -->
   <div id="status-bar" class="status-bar hidden"></div>
+
+  <!-- ── AUTO UPDATE ── -->
+  <div class="update-panel">
+    <button id="btn-check-update" class="btn-secondary update-btn">⟳ Check for Updates</button>
+    <span id="update-status-text" class="update-status-text"></span>
+    <a href="#" id="update-action-link" class="update-action-link hidden"></a>
+  </div>
 
   <!-- ── AI ANALYZE PANEL ── -->
   <!-- AI results shown after upload analysis -->
@@ -122,6 +129,8 @@
     <button id="btn-refresh-sheet" class="btn-ghost refresh-btn">↻ Refresh Sheet</button>
   </div>
 
+  <script src="lib/fflate.umd.js"></script>
+  <script src="update-manager.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

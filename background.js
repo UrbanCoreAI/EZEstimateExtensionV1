@@ -1,6 +1,12 @@
 // Keel EZ Estimate - Background Service Worker
 // Handles Google Sheets API auth, data read/write, and GPT-4o plan analysis
 
+// Only checkVersionOnly() from this is ever called here — it's a plain
+// fetch + chrome.storage comparison, safe from a service-worker context.
+// The directory-handle/unzip/write path in update-manager.js only ever
+// runs from the popup (panel.html), which has the user gesture it needs.
+importScripts('update-manager.js');
+
 const SHEETS_API    = 'https://sheets.googleapis.com/v4/spreadsheets';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const SCOPES        = 'https://www.googleapis.com/auth/spreadsheets';
@@ -8,6 +14,159 @@ const OPENAI_API    = 'https://api.openai.com/v1/chat/completions';
 
 const DEFAULT_SHEET_ID   = '1iO37IiTagtu4OGEZSHA5C62tPRc5HOKMpq0UcsUI9ig';
 const DEFAULT_SHEET_NAME = '2026 CUSTOM PLAN';
+
+// ─── Supabase (job quantities + pricing) ─────────────────────────────────────
+// Same project the webpage's calc-engine uses. Anon key is meant to be
+// public (RLS enforces what it can actually do) — see supabase-migrations/
+// job_quantities.sql for the policies backing job_quantities specifically.
+const SUPABASE_URL  = 'https://fujddlemswhbdqrhpekt.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4';
+
+function supabaseHeaders(extra) {
+  return Object.assign({
+    apikey: SUPABASE_ANON,
+    Authorization: 'Bearer ' + SUPABASE_ANON,
+    'Content-Type': 'application/json'
+  }, extra || {});
+}
+
+// Row (in the Sheet's raw-measurement column, rows 3-29) -> job_quantities
+// field name. Must stay identical to ROW_TO_FIELD in the webpage's
+// index.html calc-engine and in supabase-migrations/job_quantities.sql's
+// column names — kept in sync by hand, no shared build step.
+const ROW_TO_FIELD = {
+  3: 'basement_sf', 4: 'floor1_sf', 5: 'floor2_sf', 6: 'floor3_sf',
+  7: 'attic_storage_sf', 8: 'habitable_attic_sf',
+  9: 'front_porch_sf', 10: 'rear_porch_sf', 11: 'rear_deck_sf', 12: 'garage_sf',
+  18: 'exterior_doors', 19: 'windows', 20: 'baths',
+  21: 'cabinets_lf', 22: 'countertop_lf', 23: 'staircases',
+  24: 'porch_columns', 25: 'garage_doors', 26: 'interior_doors',
+  27: 'carpet_sf', 28: 'hardwood_sf', 29: 'tile_sf'
+};
+const TOTAL_AREA_ROWS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+function totalAreaSum(jq) {
+  return TOTAL_AREA_ROWS.reduce((sum, row) => sum + (Number(jq[ROW_TO_FIELD[row]]) || 0), 0);
+}
+const CELL_REF_RE = /\$?I\$?(\d+)/g;
+function evaluateQuantityFormula(formula, jq) {
+  const f = (formula || '').trim();
+  if (f === '') return 0;
+  if (!f.startsWith('=')) { const n = Number(f); return isFinite(n) ? n : 0; }
+  const body = f.slice(1);
+  let total = 0, m;
+  CELL_REF_RE.lastIndex = 0;
+  while ((m = CELL_REF_RE.exec(body)) !== null) {
+    const rowN = parseInt(m[1], 10);
+    if (rowN === 13) { total += totalAreaSum(jq); continue; }
+    const field = ROW_TO_FIELD[rowN];
+    total += field ? (Number(jq[field]) || 0) : 0;
+  }
+  return total;
+}
+
+// Converts the same `values` object buildUpdates() consumes (CELL_MAP keys
+// like "# of baths") into a job_quantities row, via CELL_MAP -> row number
+// -> ROW_TO_FIELD, instead of introducing a second key set.
+function buildJobQuantitiesRow(values) {
+  const row = { id: 1 };
+  for (const key in values) {
+    const cell = CELL_MAP[key.toLowerCase().trim()];
+    if (!cell) continue;
+    const rowNum = parseInt(cell.replace(/\D/g, ''), 10);
+    const field = ROW_TO_FIELD[rowNum];
+    const val = values[key];
+    if (field && val !== '' && val !== null && val !== undefined) {
+      const num = parseFloat(String(val).replace(/,/g, ''));
+      if (!isNaN(num)) row[field] = num;
+    }
+  }
+  return row;
+}
+
+async function upsertJobQuantities(values) {
+  const row = buildJobQuantitiesRow(values);
+  row.updated_at = new Date().toISOString();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/job_quantities`, {
+    method: 'POST',
+    headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify([row])
+  });
+  if (!res.ok) throw new Error('Supabase job_quantities upsert failed: ' + await res.text());
+}
+
+// Basement pricing (fixed cost + $/SF shell + $/SF finish-out) — not part
+// of the quantity_formula/cost_items system, its own table, same as the
+// webpage's index.html calc-engine (see computeBasementLineItems there).
+async function readBasementPricing() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/basement_pricing?id=eq.1&select=*`, {
+    headers: supabaseHeaders()
+  });
+  if (!res.ok) throw new Error('Supabase basement_pricing read failed: ' + await res.text());
+  const rows = await res.json();
+  if (!rows.length) throw new Error('No basement_pricing row found in Supabase (id=1).');
+  return rows[0];
+}
+
+// Client Preview low/high price range multipliers — was hardcoded 0.99/1.10
+// in both popup.js and tabpicker.js.
+async function readClientPreviewMultipliers() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/client_preview_settings?id=eq.1&select=*`, {
+    headers: supabaseHeaders()
+  });
+  if (!res.ok) throw new Error('Supabase client_preview_settings read failed: ' + await res.text());
+  const rows = await res.json();
+  if (!rows.length) throw new Error('No client_preview_settings row found in Supabase (id=1).');
+  return { lower: Number(rows[0].lower_range_multiplier), upper: Number(rows[0].upper_range_multiplier) };
+}
+
+// Good/Better/Best allowance tier multipliers — shared across all 13
+// allowance line items; which tier each item uses is chosen per-item in
+// the UI, never persisted.
+async function readAllowanceTierMultipliers() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/allowance_tier_settings?id=eq.1&select=*`, {
+    headers: supabaseHeaders()
+  });
+  if (!res.ok) throw new Error('Supabase allowance_tier_settings read failed: ' + await res.text());
+  const rows = await res.json();
+  if (!rows.length) throw new Error('No allowance_tier_settings row found in Supabase (id=1).');
+  return {
+    good: Number(rows[0].good_multiplier),
+    better: Number(rows[0].better_multiplier),
+    best: Number(rows[0].best_multiplier)
+  };
+}
+
+async function readJobQuantitiesFromSupabase(neededRows) {
+  const jqRes = await fetch(`${SUPABASE_URL}/rest/v1/job_quantities?id=eq.1&select=*`, {
+    headers: supabaseHeaders()
+  });
+  if (!jqRes.ok) throw new Error('Supabase job_quantities read failed: ' + await jqRes.text());
+  const jqRows = await jqRes.json();
+  if (!jqRows.length) throw new Error('No job_quantities row found in Supabase (id=1) — run "Write to Sheet" at least once first.');
+  const jq = jqRows[0];
+
+  const codes = neededRows.map(String);
+  const ciRes = await fetch(`${SUPABASE_URL}/rest/v1/cost_items?select=cost_code,item_name,quantity_formula&cost_code=in.(${codes.join(',')})`, {
+    headers: supabaseHeaders()
+  });
+  if (!ciRes.ok) throw new Error('Supabase cost_items read failed: ' + await ciRes.text());
+  const ciRows = await ciRes.json();
+  const byCode = {};
+  ciRows.forEach(r => { byCode[r.cost_code] = r; });
+
+  const out = {
+    I13: totalAreaSum(jq),
+    I9: jq.front_porch_sf || 0, I10: jq.rear_porch_sf || 0, I11: jq.rear_deck_sf || 0,
+    I18: jq.exterior_doors || 0, I19: jq.windows || 0, I20: jq.baths || 0,
+    I23: jq.staircases || 0, I24: jq.porch_columns || 0, I26: jq.interior_doors || 0
+  };
+  neededRows.forEach(row => {
+    const item = byCode[String(row)];
+    if (item === undefined) throw new Error('cost_items row ' + row + ' not found in Supabase — refusing to guess a quantity.');
+    out['D' + row] = evaluateQuantityFormula(item.quantity_formula, jq);
+  });
+  return out;
+}
 
 // ─── Floating Panel Window ───────────────────────────────────────────────────
 // Clicking the toolbar icon opens a draggable/resizable floating window
@@ -534,7 +693,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           ];
           await sheetsWrite(zeroRanges.map(r => ({ range: r, value: 0 })));
           await sheetsWrite(updates);
-          sendResponse({ ok: true, written: updates.length });
+          // Sheet stays the mirror/fallback; Supabase is now what "Write to
+          // Estimate" actually reads from. Non-fatal — a Supabase hiccup
+          // shouldn't block the Sheet write the user is watching for.
+          let supabaseWarning = null;
+          try { await upsertJobQuantities(msg.values); }
+          catch (e) { supabaseWarning = e.message; }
+          sendResponse({ ok: true, written: updates.length, supabaseWarning });
+          break;
+        }
+
+        case 'READ_JOB_QUANTITIES_SUPABASE': {
+          const data = await readJobQuantitiesFromSupabase(msg.neededRows);
+          sendResponse({ ok: true, data });
+          break;
+        }
+
+        case 'READ_BASEMENT_PRICING': {
+          const pricing = await readBasementPricing();
+          sendResponse({ ok: true, pricing });
+          break;
+        }
+
+        case 'READ_CLIENT_PREVIEW_MULTIPLIERS': {
+          const multipliers = await readClientPreviewMultipliers();
+          sendResponse({ ok: true, multipliers });
+          break;
+        }
+
+        case 'READ_ALLOWANCE_TIER_MULTIPLIERS': {
+          const tiers = await readAllowanceTierMultipliers();
+          sendResponse({ ok: true, tiers });
           break;
         }
 
@@ -807,7 +996,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case 'NOTIFY_PDF_READY': {
           // Find the EZEstimate webpage tab and tell its content script the PDF is ready
-          const allTabs = await chrome.tabs.query({ url: 'https://alanamac222.github.io/*' });
+          const allTabs = await chrome.tabs.query({ url: ['https://alanamac222.github.io/*', 'https://urbancoreai.github.io/*'] });
           for (const t of allTabs) {
             try { await chrome.tabs.sendMessage(t.id, { action: 'PROPOSAL_PDF_READY' }); } catch (_) {}
           }
@@ -912,3 +1101,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true;
 });
+
+// ─── Auto-Update: hourly background check ────────────────────────────────
+// Silent — only ever sets a toolbar badge when a newer version is published.
+// Never downloads or applies anything itself; the user still has to open
+// the panel and click "Check for Updates" to actually pull the update.
+const UPDATE_ALARM_NAME = 'ez-update-check';
+
+async function runBackgroundUpdateCheck() {
+  try {
+    const result = await self.EZUpdateManager.checkVersionOnly();
+    if (result.hasUpdate) {
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#e8b84b' });
+    } else {
+      chrome.action.setBadgeText({ text: '' });
+    }
+  } catch (e) {
+    // Best-effort convenience check — real errors surface from the popup's
+    // own "Check for Updates" button, not here.
+  }
+}
+
+chrome.alarms.create(UPDATE_ALARM_NAME, { periodInMinutes: 60 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === UPDATE_ALARM_NAME) runBackgroundUpdateCheck();
+});
+chrome.runtime.onStartup.addListener(() => runBackgroundUpdateCheck());
+chrome.runtime.onInstalled.addListener(() => runBackgroundUpdateCheck());

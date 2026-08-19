@@ -200,6 +200,7 @@
       <span class="zoom-label" id="zoom-label">100%</span>
       <button class="ctrl-btn" id="btn-zoom-in"  title="Zoom in">+</button>
       <button class="ctrl-btn" id="btn-pin" title="Pin: keep on top">📌</button>
+      <button id="btn-open-admin" class="icon-btn" title="Open Admin Database">✏️</button>
       <button id="btn-open-ezestimate" class="icon-btn" title="Open EZEstimate webpage">🔗</button>
       <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
     </div>
@@ -207,6 +208,13 @@
 
   <!-- Status bar -->
   <div id="status-bar" class="status-bar hidden"></div>
+
+  <!-- ── AUTO UPDATE ── -->
+  <div class="update-panel">
+    <button id="btn-check-update" class="btn-secondary update-btn">⟳ Check for Updates</button>
+    <span id="update-status-text" class="update-status-text"></span>
+    <a href="#" id="update-action-link" class="update-action-link hidden"></a>
+  </div>
 
   <!-- Scrollable content area -->
   <div class="panel-body">
@@ -367,6 +375,11 @@
               <option value="Standard (12K)">Standard (12K)</option>
               <option value="High (18K)">High (18K)</option>
             </select>
+            <select class="ext-tier-select" data-item="Tap Fees" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="good" selected>Good</option>
+              <option value="better">Better</option>
+              <option value="best">Best</option>
+            </select>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Lot Clearing</label>
@@ -375,6 +388,11 @@
               <option value="Light">Light</option>
               <option value="Moderate">Moderate</option>
               <option value="Heavy">Heavy</option>
+            </select>
+            <select class="ext-tier-select" data-item="Clearing Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="good" selected>Good</option>
+              <option value="better">Better</option>
+              <option value="best">Best</option>
             </select>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
@@ -386,6 +404,11 @@
               <option value="Long Gravel">Long Gravel</option>
               <option value="Asphalt">Asphalt</option>
             </select>
+            <select class="ext-tier-select" data-item="Driveway Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="good" selected>Good</option>
+              <option value="better">Better</option>
+              <option value="best">Best</option>
+            </select>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Landscaping</label>
@@ -395,8 +418,79 @@
               <option value="Standard">Standard</option>
               <option value="Extensive">Extensive</option>
             </select>
+            <select class="ext-tier-select" data-item="Landscaping Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+              <option value="good" selected>Good</option>
+              <option value="better">Better</option>
+              <option value="best">Best</option>
+            </select>
           </div>
         </div>
+
+        <!-- Allowance Upgrades — Good/Better/Best per allowance. Good is the
+             baseline (no description note written); Better/Best scale the
+             quantity and write "Upgrade: Better"/"Upgrade: Best" onto the
+             line's description. Multipliers come from Supabase's
+             allowance_tier_settings (editable in the admin webpage). -->
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#fff;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;letter-spacing:.03em;">ALLOWANCE UPGRADES <span style="font-weight:400;color:#94a3b8;">(optional)</span></div>
+          <div id="ext-allowance-tiers" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Accessories</label>
+              <select class="ext-tier-select" data-item="Accessories Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Appliance</label>
+              <select class="ext-tier-select" data-item="Appliance Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Cabinet</label>
+              <select class="ext-tier-select" data-item="Cabinet Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Carpet</label>
+              <select class="ext-tier-select" data-item="Carpet Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Countertop</label>
+              <select class="ext-tier-select" data-item="Countertop Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Hardwood Flooring</label>
+              <select class="ext-tier-select" data-item="Hardwood Flooring Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Lighting Fixture</label>
+              <select class="ext-tier-select" data-item="Lighting Fixture Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Plumbing Fixture</label>
+              <select class="ext-tier-select" data-item="Plumbing Fixture Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Tile</label>
+              <select class="ext-tier-select" data-item="Tile Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
+                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- Calculator -->
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#fff;margin-bottom:8px;">
           <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:2px;letter-spacing:.03em;">CALCULATOR</div>
@@ -410,6 +504,23 @@
             <button id="ext-calc-history-btn" style="font-size:11px;color:#64748b;background:none;border:none;cursor:pointer;padding:2px 0;margin-top:2px;">▾ History</button>
             <div id="ext-calc-history-drop" style="display:none;position:absolute;left:0;top:100%;z-index:999;background:#fff;border:1px solid #e2e8f0;border-radius:7px;box-shadow:0 4px 12px rgba(0,0,0,.1);min-width:220px;max-height:180px;overflow-y:auto;padding:4px 0;"></div>
           </div>
+        </div>
+
+        <!-- Basement Pricing — written as Finished/Unfinished Basement Allowance
+             line items under Custom Selection Allowances, priced from Supabase's
+             basement_pricing table (fixed cost + $/SF shell + $/SF finish-out) -->
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#fff;margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;letter-spacing:.03em;">BASEMENT <span style="font-weight:400;color:#94a3b8;">(optional)</span></div>
+          <div style="display:flex;gap:5px;margin-bottom:4px;align-items:center;">
+            <label style="flex:1;font-size:12px;color:#1e293b;">Unfinished SF</label>
+            <input id="ext-basement-unfinished-sf" type="number" placeholder="0" min="0" style="flex:1;font-size:12px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;outline:none;">
+          </div>
+          <input id="ext-basement-unfinished-desc" type="text" placeholder="Unfinished basement description…" style="width:100%;font-size:12px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;outline:none;margin-bottom:6px;box-sizing:border-box;">
+          <div style="display:flex;gap:5px;margin-bottom:4px;align-items:center;">
+            <label style="flex:1;font-size:12px;color:#1e293b;">Finished SF</label>
+            <input id="ext-basement-finished-sf" type="number" placeholder="0" min="0" style="flex:1;font-size:12px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;outline:none;">
+          </div>
+          <input id="ext-basement-finished-desc" type="text" placeholder="Finished basement description…" style="width:100%;font-size:12px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;outline:none;box-sizing:border-box;">
         </div>
 
         <!-- Custom Selection Allowances -->
@@ -529,6 +640,8 @@
 
   </div><!-- end .panel-body -->
 
+  <script src="lib/fflate.umd.js"></script>
+  <script src="update-manager.js"></script>
   <script src="popup.js"></script>
   <script src="takeoff-workflow.js"></script>
   <script src="panel-controls.js"></script>

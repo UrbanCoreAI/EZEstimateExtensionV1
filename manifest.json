@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Duke Estimating - BuilderTrend Sync",
+  "name": "Keel EZ Estimate - BuilderTrend Sync",
   "version": "1.0.1",
   "description": "Sync BuilderTrend takeoff measurements to your Google Sheets estimating spreadsheet",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4i2QVYaknZwSUiCurnASYmeeKH4tIbVAEhwTnws/aYVVI4thX7S7j064C40hBgjfC4U9kxdVmIHbnbvSYr1js++6OOpiRPEoe5Ky/SJYSY2dh06QBVhP19TFZ6x8q2kB1blZTWMvGyA/3NTApxX2jym+YiAx0Az82rwbf2M1uLvMtZOjuyPzz7zfDAcOF7XsQ/FEVsO0QknVkPbnMQjEVZtV9IvRDjGINf56VqAQQM/0Nct1qxBVIoKYv2p1qw7EIpbQem1oxchqL7b8pXyzJnxlZHuHP8w2jYVMIFVu4fkUQJOQbu8Msu6FijslFXNqtWOYr1yjR7JgYZyCFIqbEQIDAQAB",
-  "permissions": ["identity", "storage", "scripting", "tabs", "tabCapture", "windows", "offscreen", "webNavigation"],
+  "permissions": ["identity", "storage", "scripting", "tabs", "tabCapture", "windows", "offscreen", "webNavigation", "alarms"],
   "host_permissions": [
     "<all_urls>",
-    "https://sheets.googleapis.com/*"
+    "https://sheets.googleapis.com/*",
+    "https://fujddlemswhbdqrhpekt.supabase.co/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -28,14 +29,15 @@
     },
     {
       "matches": [
-        "https://alanamac222.github.io/*"
+        "https://alanamac222.github.io/*",
+        "https://urbancoreai.github.io/*"
       ],
       "js": ["webpage-bridge.js"],
       "run_at": "document_idle"
     }
   ],
   "action": {
-    "default_title": "Duke Estimating Sync",
+    "default_title": "Keel EZ Estimate Sync",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
