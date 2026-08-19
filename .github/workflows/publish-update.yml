@@ -1,0 +1,77 @@
+name: Publish Extension Update
+
+# Packages the current extension folder into latest.zip + version.json and
+# publishes both to the "extension-updates" bucket in Supabase Storage every
+# time main is pushed. Coworkers then pull this via the extension's own
+# "Check for Updates" button (see update-manager.js) — nothing here touches
+# the separate public webpage/Vercel deploy.
+#
+# One-time setup required before this works — see AUTO-UPDATE-SETUP.md:
+#   1. Create a public Storage bucket named "extension-updates" in Supabase.
+#   2. Add repo secrets SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
+#      (Settings → Secrets and variables → Actions). Never put the service
+#      role key anywhere in the extension's own source.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-extension-update
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package extension into latest.zip
+        run: |
+          zip -r latest.zip . \
+            -x '.git/*' -x '.github/*' -x 'node_modules/*' \
+            -x '*.md' -x 'supabase-migrations/*' \
+            -x 'latest.zip' -x 'version.json'
+
+      - name: Write version.json
+        run: |
+          cat > version.json <<EOF
+          {
+            "version": ${{ github.run_number }},
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}"
+          }
+          EOF
+          cat version.json
+
+      # Zip goes up FIRST, version.json LAST — a client that fetches
+      # version.json right after this workflow finishes must never see a
+      # bumped version number before the matching zip is actually in place.
+      - name: Upload latest.zip to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -sf -X POST \
+            "$SUPABASE_URL/storage/v1/object/extension-updates/latest.zip" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/zip" \
+            -H "x-upsert: true" \
+            --data-binary @latest.zip
+
+      - name: Upload version.json to Supabase Storage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          curl -sf -X POST \
+            "$SUPABASE_URL/storage/v1/object/extension-updates/version.json" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "x-upsert: true" \
+            --data-binary @version.json
