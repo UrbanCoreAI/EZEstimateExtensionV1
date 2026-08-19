@@ -1431,6 +1431,11 @@
               <option value="Standard (12K)">Standard (12K)</option>
               <option value="High (18K)">High (18K)</option>
             </select>
+            <div style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Lot Clearing</label>
@@ -1440,6 +1445,11 @@
               <option value="Moderate">Moderate</option>
               <option value="Heavy">Heavy</option>
             </select>
+            <div style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Driveway</label>
@@ -1450,6 +1460,11 @@
               <option value="Long Gravel">Long Gravel</option>
               <option value="Asphalt">Asphalt</option>
             </select>
+            <div style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Landscaping</label>
@@ -1459,6 +1474,92 @@
               <option value="Standard">Standard</option>
               <option value="Extensive">Extensive</option>
             </select>
+            <div style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="best">Best</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Allowance Upgrades — Good/Better/Best per allowance, as radio
+             choices (Good pre-selected). Same semantics as ext-tier-select
+             in panel.html. -->
+        <div id="tk-allowance-tiers-section" style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#f8fafc;">
+          <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;letter-spacing:.03em;">ALLOWANCE UPGRADES <span style="font-weight:400;color:#94a3b8;">(optional)</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Accessories</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-accessories" class="tk-tier-select" data-item="Accessories Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-accessories" class="tk-tier-select" data-item="Accessories Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-accessories" class="tk-tier-select" data-item="Accessories Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Appliance</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-appliance" class="tk-tier-select" data-item="Appliance Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-appliance" class="tk-tier-select" data-item="Appliance Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-appliance" class="tk-tier-select" data-item="Appliance Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Cabinet</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-cabinet" class="tk-tier-select" data-item="Cabinet Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-cabinet" class="tk-tier-select" data-item="Cabinet Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-cabinet" class="tk-tier-select" data-item="Cabinet Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Carpet</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-carpet" class="tk-tier-select" data-item="Carpet Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-carpet" class="tk-tier-select" data-item="Carpet Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-carpet" class="tk-tier-select" data-item="Carpet Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Countertop</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-countertop" class="tk-tier-select" data-item="Countertop Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-countertop" class="tk-tier-select" data-item="Countertop Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-countertop" class="tk-tier-select" data-item="Countertop Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Hardwood Flooring</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-hardwood" class="tk-tier-select" data-item="Hardwood Flooring Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-hardwood" class="tk-tier-select" data-item="Hardwood Flooring Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-hardwood" class="tk-tier-select" data-item="Hardwood Flooring Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Lighting Fixture</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-lighting" class="tk-tier-select" data-item="Lighting Fixture Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-lighting" class="tk-tier-select" data-item="Lighting Fixture Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-lighting" class="tk-tier-select" data-item="Lighting Fixture Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Plumbing Fixture</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-plumbing" class="tk-tier-select" data-item="Plumbing Fixture Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-plumbing" class="tk-tier-select" data-item="Plumbing Fixture Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-plumbing" class="tk-tier-select" data-item="Plumbing Fixture Allowance" value="best">Best</label>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <label style="font-size:10px;color:#64748b;font-weight:600;">Tile</label>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tile" class="tk-tier-select" data-item="Tile Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tile" class="tk-tier-select" data-item="Tile Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tile" class="tk-tier-select" data-item="Tile Allowance" value="best">Best</label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1750,7 +1851,7 @@
         var lender = document.getElementById('tk-chk-lender') && document.getElementById('tk-chk-lender').checked;
         var cells = await sendMsg('READ_CELLS_BATCH', {
           ranges: ['I13','D32','D46','D50','D56','D59','D62','D68','I9','I10','I11',
-                   'I18','I19','I23','I24','I26',
+                   'I18','I19','I23','I24','I26','I20',
                    'D86','D88','D89','D90','D91','D92','D93','D94','D99']
         });
         var c = cells.data;
@@ -1772,7 +1873,7 @@
           { name: 'Porch Columns',      qty: n(c['I24']) },
           { name: 'Interior Doors',     qty: n(c['I26']) },
           { name: 'Garage Door',        qty: n(c['D68']) },
-          { name: 'Number of Baths',    qty: n(c['D93']) },
+          { name: 'Number of Baths',    qty: n(c['I20']) }, // I20, not D93 — D93 is Plumbing Fixture Allowance
           { name: 'Accessories Allowance',       qty: n(c['D86']) },
           { name: 'Appliance Allowance',         qty: 1 },
           { name: 'Cabinet Allowance',           qty: n(c['D88']) },
@@ -1788,6 +1889,42 @@
           { name: 'Tap Fees',              qty: 1 },
         ];
         if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
+
+        // Good/Better/Best allowance tiers — Group A (9 quantity-driven
+        // allowances). Same semantics as writeToEstimate() in popup.js:
+        // multiplier scales quantity, Better/Best also stamp a description.
+        // Degrades to "everyone is Good" if the Supabase read fails, rather
+        // than blocking the write.
+        var ALLOWANCE_TIER_GROUP_A = [
+          'Accessories Allowance', 'Appliance Allowance', 'Cabinet Allowance', 'Carpet Allowance',
+          'Countertop Allowance', 'Hardwood Flooring Allowance', 'Lighting Fixture Allowance',
+          'Plumbing Fixture Allowance', 'Tile Allowance'
+        ];
+        function tkTierDescription(tier) {
+          if (tier === 'better') return 'Upgrade: Better';
+          if (tier === 'best') return 'Upgrade: Best';
+          return null;
+        }
+        var allowanceTierMultipliers = { good: 1, better: 1, best: 1 };
+        try {
+          var tierResp = await sendMsg('READ_ALLOWANCE_TIER_MULTIPLIERS', {});
+          if (tierResp && tierResp.multipliers) allowanceTierMultipliers = tierResp.multipliers;
+        } catch (e) {
+          console.warn('[Keel] allowance tier multipliers unavailable, defaulting all to Good:', e.message);
+        }
+        var tkTierByItemName = {};
+        document.querySelectorAll('.tk-tier-select:checked').forEach(function(el) {
+          var itemName = el.getAttribute('data-item');
+          if (itemName) tkTierByItemName[itemName] = el.value || 'good';
+        });
+        items.forEach(function(item) {
+          if (ALLOWANCE_TIER_GROUP_A.indexOf(item.name) === -1) return;
+          var tier = tkTierByItemName[item.name] || 'good';
+          var multiplier = allowanceTierMultipliers[tier];
+          if (multiplier && multiplier !== 1) item.qty = item.qty * multiplier;
+          var desc = tkTierDescription(tier);
+          if (desc) item.description = desc;
+        });
 
         // Read site option dropdowns (same as EXT_SITE_MAP in popup.js)
         var TK_SITE_MAP = {
@@ -1839,7 +1976,19 @@
           selectedSiteItems.forEach(function(item) {
             var rowData = cRows[item.row - 2];
             var unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
-            siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine });
+
+            // Group B allowance tier (4 fixed-price items) — stacks on top
+            // of whichever site option was already selected. Keyed by
+            // existingLine, matching the tk-tier-select data-item attribute.
+            var description;
+            if (item.existingLine) {
+              var tier = tkTierByItemName[item.existingLine] || 'good';
+              var multiplier = allowanceTierMultipliers[tier];
+              if (multiplier && multiplier !== 1) unitCost = unitCost * multiplier;
+              description = tkTierDescription(tier) || undefined;
+            }
+
+            siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine, description: description });
           });
         }
 

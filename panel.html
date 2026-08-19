@@ -375,11 +375,11 @@
               <option value="Standard (12K)">Standard (12K)</option>
               <option value="High (18K)">High (18K)</option>
             </select>
-            <select class="ext-tier-select" data-item="Tap Fees" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-              <option value="good" selected>Good</option>
-              <option value="better">Better</option>
-              <option value="best">Best</option>
-            </select>
+            <div class="ext-tier-radio-group" style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tap" class="ext-tier-select" data-item="Tap Fees" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tap" class="ext-tier-select" data-item="Tap Fees" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tap" class="ext-tier-select" data-item="Tap Fees" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Lot Clearing</label>
@@ -389,11 +389,11 @@
               <option value="Moderate">Moderate</option>
               <option value="Heavy">Heavy</option>
             </select>
-            <select class="ext-tier-select" data-item="Clearing Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-              <option value="good" selected>Good</option>
-              <option value="better">Better</option>
-              <option value="best">Best</option>
-            </select>
+            <div class="ext-tier-radio-group" style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-clearing" class="ext-tier-select" data-item="Clearing Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-clearing" class="ext-tier-select" data-item="Clearing Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-clearing" class="ext-tier-select" data-item="Clearing Allowance" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Driveway</label>
@@ -404,11 +404,11 @@
               <option value="Long Gravel">Long Gravel</option>
               <option value="Asphalt">Asphalt</option>
             </select>
-            <select class="ext-tier-select" data-item="Driveway Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-              <option value="good" selected>Good</option>
-              <option value="better">Better</option>
-              <option value="best">Best</option>
-            </select>
+            <div class="ext-tier-radio-group" style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-driveway" class="ext-tier-select" data-item="Driveway Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-driveway" class="ext-tier-select" data-item="Driveway Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-driveway" class="ext-tier-select" data-item="Driveway Allowance" value="best">Best</label>
+            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Landscaping</label>
@@ -418,75 +418,94 @@
               <option value="Standard">Standard</option>
               <option value="Extensive">Extensive</option>
             </select>
-            <select class="ext-tier-select" data-item="Landscaping Allowance" style="font-size:10px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-              <option value="good" selected>Good</option>
-              <option value="better">Better</option>
-              <option value="best">Best</option>
-            </select>
+            <div class="ext-tier-radio-group" style="display:flex;gap:8px;margin-top:2px;">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-landscaping" class="ext-tier-select" data-item="Landscaping Allowance" value="good" checked>Good</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-landscaping" class="ext-tier-select" data-item="Landscaping Allowance" value="better">Better</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-landscaping" class="ext-tier-select" data-item="Landscaping Allowance" value="best">Best</label>
+            </div>
           </div>
         </div>
 
-        <!-- Allowance Upgrades — Good/Better/Best per allowance. Good is the
-             baseline (no description note written); Better/Best scale the
-             quantity and write "Upgrade: Better"/"Upgrade: Best" onto the
-             line's description. Multipliers come from Supabase's
-             allowance_tier_settings (editable in the admin webpage). -->
+        <!-- Allowance Upgrades — Good/Better/Best per allowance, as radio
+             choices (Good pre-selected). Good writes nothing; Better/Best
+             scale quantity (Group A) or unit cost (Group B, above) and
+             stamp a description. Multipliers come from Supabase's
+             allowance_tier_settings (id=1) — editable in the admin webpage,
+             see supabase-migrations/. -->
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#fff;margin-bottom:8px;">
           <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:5px;letter-spacing:.03em;">ALLOWANCE UPGRADES <span style="font-weight:400;color:#94a3b8;">(optional)</span></div>
-          <div id="ext-allowance-tiers" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+          <div id="ext-allowance-tiers" style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Accessories</label>
-              <select class="ext-tier-select" data-item="Accessories Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-accessories" class="ext-tier-select" data-item="Accessories Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-accessories" class="ext-tier-select" data-item="Accessories Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-accessories" class="ext-tier-select" data-item="Accessories Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Appliance</label>
-              <select class="ext-tier-select" data-item="Appliance Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-appliance" class="ext-tier-select" data-item="Appliance Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-appliance" class="ext-tier-select" data-item="Appliance Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-appliance" class="ext-tier-select" data-item="Appliance Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Cabinet</label>
-              <select class="ext-tier-select" data-item="Cabinet Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-cabinet" class="ext-tier-select" data-item="Cabinet Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-cabinet" class="ext-tier-select" data-item="Cabinet Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-cabinet" class="ext-tier-select" data-item="Cabinet Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Carpet</label>
-              <select class="ext-tier-select" data-item="Carpet Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-carpet" class="ext-tier-select" data-item="Carpet Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-carpet" class="ext-tier-select" data-item="Carpet Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-carpet" class="ext-tier-select" data-item="Carpet Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Countertop</label>
-              <select class="ext-tier-select" data-item="Countertop Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-countertop" class="ext-tier-select" data-item="Countertop Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-countertop" class="ext-tier-select" data-item="Countertop Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-countertop" class="ext-tier-select" data-item="Countertop Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Hardwood Flooring</label>
-              <select class="ext-tier-select" data-item="Hardwood Flooring Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-hardwood" class="ext-tier-select" data-item="Hardwood Flooring Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-hardwood" class="ext-tier-select" data-item="Hardwood Flooring Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-hardwood" class="ext-tier-select" data-item="Hardwood Flooring Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Lighting Fixture</label>
-              <select class="ext-tier-select" data-item="Lighting Fixture Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-lighting" class="ext-tier-select" data-item="Lighting Fixture Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-lighting" class="ext-tier-select" data-item="Lighting Fixture Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-lighting" class="ext-tier-select" data-item="Lighting Fixture Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Plumbing Fixture</label>
-              <select class="ext-tier-select" data-item="Plumbing Fixture Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-plumbing" class="ext-tier-select" data-item="Plumbing Fixture Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-plumbing" class="ext-tier-select" data-item="Plumbing Fixture Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-plumbing" class="ext-tier-select" data-item="Plumbing Fixture Allowance" value="best">Best</label>
+              </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:2px;">
               <label style="font-size:10px;color:#64748b;font-weight:600;">Tile</label>
-              <select class="ext-tier-select" data-item="Tile Allowance" style="font-size:11px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;color:#1e293b;">
-                <option value="good" selected>Good</option><option value="better">Better</option><option value="best">Best</option>
-              </select>
+              <div style="display:flex;gap:8px;">
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tile" class="ext-tier-select" data-item="Tile Allowance" value="good" checked>Good</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tile" class="ext-tier-select" data-item="Tile Allowance" value="better">Better</label>
+                <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="ext-tier-tile" class="ext-tier-select" data-item="Tile Allowance" value="best">Best</label>
+              </div>
             </div>
           </div>
         </div>

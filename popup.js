@@ -1283,7 +1283,7 @@ async function writeToEstimate() {
     log('Reading sheet values…');
     const cells = await sendMsg('READ_CELLS_BATCH', {
       ranges: ['I13','D32','D46','D50','D56','D59','D62','D68','I9','I10','I11',
-               'I18','I19','I23','I24','I26',
+               'I18','I19','I23','I24','I26','I20',
                'D86','D88','D89','D90','D91','D92','D93','D94','D99']
     });
     const c = cells.data;
@@ -1305,7 +1305,7 @@ async function writeToEstimate() {
       { name: 'Porch Columns',      qty: n(c['I24']) },
       { name: 'Interior Doors',     qty: n(c['I26']) },
       { name: 'Garage Door',        qty: n(c['D68']) },
-      { name: 'Number of Baths',    qty: n(c['D93']) },
+      { name: 'Number of Baths',    qty: n(c['I20']) }, // I20, not D93 — D93 is Plumbing Fixture Allowance
       { name: 'Accessories Allowance',       qty: n(c['D86']) },
       { name: 'Appliance Allowance',         qty: 1 },
       { name: 'Cabinet Allowance',           qty: n(c['D88']) },
@@ -1321,6 +1321,44 @@ async function writeToEstimate() {
       { name: 'Tap Fees',              qty: 1 },
     ];
     if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
+
+    // Good/Better/Best allowance tiers — Group A (9 quantity-driven allowances).
+    // Radio choices (.ext-tier-select), Good pre-checked by default. Multiplier
+    // scales the computed quantity; Better/Best also stamp a description.
+    // Multipliers are read fresh every run and never persisted; if the
+    // Supabase read fails, this degrades to "everyone is Good" rather than
+    // blocking the write — the description note is the only visible sign
+    // of a tier upgrade, quantities and the estimate itself always work.
+    const ALLOWANCE_TIER_GROUP_A = [
+      'Accessories Allowance', 'Appliance Allowance', 'Cabinet Allowance', 'Carpet Allowance',
+      'Countertop Allowance', 'Hardwood Flooring Allowance', 'Lighting Fixture Allowance',
+      'Plumbing Fixture Allowance', 'Tile Allowance'
+    ];
+    function tierDescription(tier) {
+      if (tier === 'better') return 'Upgrade: Better';
+      if (tier === 'best') return 'Upgrade: Best';
+      return null;
+    }
+    let allowanceTierMultipliers = { good: 1, better: 1, best: 1 };
+    try {
+      const tierResp = await sendMsg('READ_ALLOWANCE_TIER_MULTIPLIERS', {});
+      if (tierResp && tierResp.multipliers) allowanceTierMultipliers = tierResp.multipliers;
+    } catch (e) {
+      console.warn('[Keel] allowance tier multipliers unavailable, defaulting all to Good:', e.message);
+    }
+    const extTierByItemName = {};
+    document.querySelectorAll('.ext-tier-select:checked').forEach(function(el) {
+      const itemName = el.getAttribute('data-item');
+      if (itemName) extTierByItemName[itemName] = el.value || 'good';
+    });
+    items.forEach(function(item) {
+      if (ALLOWANCE_TIER_GROUP_A.indexOf(item.name) === -1) return;
+      const tier = extTierByItemName[item.name] || 'good';
+      const multiplier = allowanceTierMultipliers[tier];
+      if (multiplier && multiplier !== 1) item.qty = item.qty * multiplier;
+      const desc = tierDescription(tier);
+      if (desc) item.description = desc;
+    });
 
     // Read site option dropdowns from extension panel
     const EXT_SITE_MAP = {
@@ -1372,8 +1410,21 @@ async function writeToEstimate() {
       const cRows = soResp.data || [];
       selectedSiteItems.forEach(function(item) {
         const rowData = cRows[item.row - 2];
-        const unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
-        siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine });
+        let unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+
+        // Group B allowance tier (4 fixed-price items) — stacks on top of
+        // whichever site option was already selected. Keyed by existingLine
+        // since that's the base allowance name ("Clearing Allowance", etc.),
+        // matching the .ext-tier-select data-item attribute for that item.
+        let description;
+        if (item.existingLine) {
+          const tier = extTierByItemName[item.existingLine] || 'good';
+          const multiplier = allowanceTierMultipliers[tier];
+          if (multiplier && multiplier !== 1) unitCost = unitCost * multiplier;
+          description = tierDescription(tier) || undefined;
+        }
+
+        siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine, description: description });
       });
     }
 
