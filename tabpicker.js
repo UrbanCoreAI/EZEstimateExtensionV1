@@ -1020,7 +1020,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
     }
 
-    async function editExistingItem(searchName, newTitle, unitCost) {
+    async function editExistingItem(searchName, newTitle, unitCost, description) {
       var nsE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
       // Step 1: Search for item → click LineItemResult to open edit panel
@@ -1122,6 +1122,32 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         } else { _log.push('⚠ editExistingItem: cost input did not appear for ' + searchName); }
       } else { _log.push('⚠ editExistingItem: cost cell not found for ' + searchName); }
 
+      // Step 4.5: Allowance-tier description (Group B upgrade note). Same
+      // flat, non-namespaced textarea createLineItem's Step 4.5 already
+      // uses (confirmed via real outerHTML there — description is NOT
+      // scoped per-row like costCodeId/parentId, unlike the title/cost
+      // fields). Good tier passes no description, so this is skipped
+      // entirely in that case.
+      if (description) {
+        _log.push('  └ Writing description: "' + description + '"…');
+        var descAreaE = null;
+        for (var daE = 0; daE < 30; daE++) {
+          descAreaE = document.getElementById('description')
+                   || document.querySelector('textarea[data-testid="description"]')
+                   || document.querySelector('textarea[name="description"]');
+          if (descAreaE) break;
+          await _delay(150);
+        }
+        if (descAreaE) {
+          descAreaE.scrollIntoView({ behavior: 'instant', block: 'center' });
+          writeReactValue(descAreaE, description);
+          await _delay(250);
+          _log.push('  ✓ Description filled into textarea');
+        } else {
+          _log.push('⚠ editExistingItem: description textarea not found for ' + searchName);
+        }
+      }
+
       // Step 4: First save — coordinate click to trigger dirty-tracking prompt
       var sideEl = document.querySelector('.ant-layout-sider, aside');
       var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
@@ -1145,6 +1171,128 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
+    }
+
+    // Group A allowance-tier description writer. setQty() (used for all
+    // Group A quantity edits) only opens a small quantity spinbutton popup
+    // with no description field, so a Better/Best upgrade note needs this
+    // separate pass: search → find the row → click its title ValueDisplay
+    // to open the side panel (same as editExistingItem Step 3, but the
+    // title value itself is never touched/rewritten) → write the
+    // description (flat #description textarea, same as createLineItem and
+    // editExistingItem above) → save.
+    //
+    // ⚠ Unverified against a live BuilderTrend page: this runs immediately
+    // after setQty() has already interacted with a different, smaller
+    // popup on the same row — if descriptions don't land for Group A
+    // items, that timing/interaction sequence is the first thing to check.
+    async function setItemDescription(searchName, description) {
+      if (!description) return;
+      var nsD = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+
+      // Step 1: Search for item → click LineItemResult to open edit panel
+      var siD = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
+      if (!siD) {
+        var candsD = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
+        siD = candsD.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
+      }
+      if (siD) {
+        var contD = siD.closest('.ant-select-selector') || siD.parentElement;
+        if (contD) { contD.click(); await _delay(200); }
+        siD.focus(); await _delay(100);
+        nsD.call(siD, searchName);
+        siD.dispatchEvent(new Event('input',{bubbles:true}));
+        siD.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(900);
+        var dResult = null;
+        var dItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var dli=0; dli<dItems.length; dli++) {
+          if ((dItems[dli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { dResult = dItems[dli]; break; }
+        }
+        if (dResult) {
+          dResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+          dResult.click();
+          await _delay(1000);
+        }
+        nsD.call(siD, '');
+        siD.dispatchEvent(new Event('input',{bubbles:true}));
+        siD.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(400);
+      }
+
+      // Step 2: Find the exact <b> tag in the table with matching text → click its row to open side panel
+      var targetRowD = null;
+      for (var tdiD=0; tdiD<20; tdiD++) {
+        var bTagsD = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var tdi2D=0; tdi2D<bTagsD.length; tdi2D++) {
+          if ((bTagsD[tdi2D].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
+            targetRowD = bTagsD[tdi2D].closest('tr.proposalBaseLineItemContainerRow');
+            break;
+          }
+        }
+        if (targetRowD) break;
+        await _delay(150);
+      }
+      if (!targetRowD) { _log.push('⚠ setItemDescription: row not found for ' + searchName); return; }
+      targetRowD.click();
+      await _delay(800);
+
+      // Step 3: Click the title ValueDisplay just to open the side panel's
+      // editing context — do NOT write a new title value.
+      var titleDisplayD = null;
+      for (var tddD=0; tddD<15; tddD++) {
+        var tDisplaysD = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
+        for (var tdi3D=0; tdi3D<tDisplaysD.length; tdi3D++) {
+          if ((tDisplaysD[tdi3D].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
+            titleDisplayD = tDisplaysD[tdi3D]; break;
+          }
+        }
+        if (titleDisplayD) break;
+        await _delay(100);
+      }
+      if (titleDisplayD) {
+        titleDisplayD.click();
+        await _delay(400);
+      } else {
+        _log.push('⚠ setItemDescription: title ValueDisplay not found for ' + searchName);
+      }
+
+      // Step 4: Find + write the description textarea (no title/cost edits here)
+      var descAreaD = null;
+      for (var daD = 0; daD < 30; daD++) {
+        descAreaD = document.getElementById('description')
+                 || document.querySelector('textarea[data-testid="description"]')
+                 || document.querySelector('textarea[name="description"]');
+        if (descAreaD) break;
+        await _delay(150);
+      }
+      if (!descAreaD) { _log.push('⚠ setItemDescription: description textarea not found for ' + searchName); return; }
+      descAreaD.scrollIntoView({ behavior: 'instant', block: 'center' });
+      writeReactValue(descAreaD, description);
+      await _delay(250);
+
+      // Step 5: Save — same coordinate-click + dirty-tracking-popup pattern as editExistingItem
+      var sideElD = document.querySelector('.ant-layout-sider, aside');
+      var saveXD = sideElD ? sideElD.getBoundingClientRect().right + 5 : 10;
+      var saveYD = window.innerHeight / 2;
+      var saveTargetD = document.elementFromPoint(saveXD, saveYD) || document.body;
+      saveTargetD.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXD,clientY:saveYD}));
+      await _delay(150);
+      saveTargetD.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXD,clientY:saveYD}));
+      await _delay(900);
+
+      var dirtySaveD = null;
+      for (var dsD=0; dsD<15; dsD++) {
+        dirtySaveD = document.querySelector('[data-testid="dirtyTrackingSave"]');
+        if (dirtySaveD) break;
+        await _delay(150);
+      }
+      if (dirtySaveD) {
+        dirtySaveD.click();
+        await _delay(800);
+      }
+
+      _log.push('✓ setItemDescription: ' + searchName + ' → "' + description + '"');
     }
 
     // Like editExistingItem, but scoped to a specific group's rows only —
@@ -1307,9 +1455,12 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
       var editOpt = editableItems[itemsList[i].name];
       if (editOpt) {
-        await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost);
+        await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost, editOpt.description);
       } else {
         await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
+        if (itemsList[i].description) {
+          await setItemDescription(itemsList[i].name, itemsList[i].description);
+        }
       }
     }
 
