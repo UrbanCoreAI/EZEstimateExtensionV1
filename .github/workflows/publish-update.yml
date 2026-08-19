@@ -52,26 +52,47 @@ jobs:
       # Zip goes up FIRST, version.json LAST — a client that fetches
       # version.json right after this workflow finishes must never see a
       # bumped version number before the matching zip is actually in place.
+      #
+      # Response bodies are printed on failure for diagnosis. This is safe:
+      # Supabase Storage error bodies never contain the request's own
+      # credentials, and GitHub also auto-redacts anything matching a
+      # registered secret's value in logs regardless.
       - name: Upload latest.zip to Supabase Storage
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          curl -sf -X POST \
+          http_code=$(curl -sS -w '%{http_code}' -o /tmp/upload_zip_resp.json -X POST \
             "$SUPABASE_URL/storage/v1/object/extension-updates/latest.zip" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             -H "Content-Type: application/zip" \
             -H "x-upsert: true" \
-            --data-binary @latest.zip
+            --data-binary @latest.zip)
+          echo "HTTP status: $http_code"
+          echo "Response body:"
+          cat /tmp/upload_zip_resp.json
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Upload of latest.zip failed with HTTP $http_code"
+            exit 1
+          fi
 
       - name: Upload version.json to Supabase Storage
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          curl -sf -X POST \
+          http_code=$(curl -sS -w '%{http_code}' -o /tmp/upload_version_resp.json -X POST \
             "$SUPABASE_URL/storage/v1/object/extension-updates/version.json" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
             -H "Content-Type: application/json" \
             -H "x-upsert: true" \
-            --data-binary @version.json
+            --data-binary @version.json)
+          echo "HTTP status: $http_code"
+          echo "Response body:"
+          cat /tmp/upload_version_resp.json
+          echo
+          if [ "$http_code" -ge 400 ]; then
+            echo "::error::Upload of version.json failed with HTTP $http_code"
+            exit 1
+          fi
