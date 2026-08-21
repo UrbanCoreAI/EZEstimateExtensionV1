@@ -2969,6 +2969,7 @@ async function init() {
   });
 
   // Settings & refresh
+  $('btn-open-admin').addEventListener('click', function() { chrome.tabs.create({ url: 'https://urbancoreai.github.io/KeelEZEstimate/admin/' }); });
   $('btn-open-ezestimate').addEventListener('click', function() { chrome.tabs.create({ url: 'https://UrbanCoreAI.github.io/KeelEZEstimate/' }); });
   $('btn-settings').addEventListener('click', function() { chrome.runtime.openOptionsPage(); });
   $('btn-refresh-sheet').addEventListener('click', function() { loadSheetTab(activeTab); });
