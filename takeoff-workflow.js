@@ -1431,11 +1431,6 @@
               <option value="Standard (12K)">Standard (12K)</option>
               <option value="High (18K)">High (18K)</option>
             </select>
-            <div style="display:flex;gap:8px;margin-top:2px;">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="good" checked>Good</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="better">Better</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-tap" class="tk-tier-select" data-item="Tap Fees" value="best">Best</label>
-            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Lot Clearing</label>
@@ -1445,11 +1440,6 @@
               <option value="Moderate">Moderate</option>
               <option value="Heavy">Heavy</option>
             </select>
-            <div style="display:flex;gap:8px;margin-top:2px;">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="good" checked>Good</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="better">Better</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-clearing" class="tk-tier-select" data-item="Clearing Allowance" value="best">Best</label>
-            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Driveway</label>
@@ -1460,11 +1450,6 @@
               <option value="Long Gravel">Long Gravel</option>
               <option value="Asphalt">Asphalt</option>
             </select>
-            <div style="display:flex;gap:8px;margin-top:2px;">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="good" checked>Good</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="better">Better</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-driveway" class="tk-tier-select" data-item="Driveway Allowance" value="best">Best</label>
-            </div>
           </div>
           <div style="display:flex;flex-direction:column;gap:2px;">
             <label style="font-size:10px;color:#64748b;font-weight:600;">Landscaping</label>
@@ -1474,11 +1459,6 @@
               <option value="Standard">Standard</option>
               <option value="Extensive">Extensive</option>
             </select>
-            <div style="display:flex;gap:8px;margin-top:2px;">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="good" checked>Good</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="better">Better</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;color:#334155;cursor:pointer;"><input type="radio" name="tk-tier-landscaping" class="tk-tier-select" data-item="Landscaping Allowance" value="best">Best</label>
-            </div>
           </div>
         </div>
 
@@ -1976,19 +1956,7 @@
           selectedSiteItems.forEach(function(item) {
             var rowData = cRows[item.row - 2];
             var unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
-
-            // Group B allowance tier (4 fixed-price items) — stacks on top
-            // of whichever site option was already selected. Keyed by
-            // existingLine, matching the tk-tier-select data-item attribute.
-            var description;
-            if (item.existingLine) {
-              var tier = tkTierByItemName[item.existingLine] || 'good';
-              var multiplier = allowanceTierMultipliers[tier];
-              if (multiplier && multiplier !== 1) unitCost = unitCost * multiplier;
-              description = tkTierDescription(tier) || undefined;
-            }
-
-            siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine, description: description });
+            siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine });
           });
         }
 

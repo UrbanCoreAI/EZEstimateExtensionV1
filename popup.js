@@ -1410,21 +1410,8 @@ async function writeToEstimate() {
       const cRows = soResp.data || [];
       selectedSiteItems.forEach(function(item) {
         const rowData = cRows[item.row - 2];
-        let unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
-
-        // Group B allowance tier (4 fixed-price items) — stacks on top of
-        // whichever site option was already selected. Keyed by existingLine
-        // since that's the base allowance name ("Clearing Allowance", etc.),
-        // matching the .ext-tier-select data-item attribute for that item.
-        let description;
-        if (item.existingLine) {
-          const tier = extTierByItemName[item.existingLine] || 'good';
-          const multiplier = allowanceTierMultipliers[tier];
-          if (multiplier && multiplier !== 1) unitCost = unitCost * multiplier;
-          description = tierDescription(tier) || undefined;
-        }
-
-        siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine, description: description });
+        const unitCost = parseFloat(String((rowData && rowData[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+        siteOptions.push({ name: item.name, parentGroup: item.parentGroup, unitCost: unitCost, existingLine: item.existingLine });
       });
     }
 
