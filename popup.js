@@ -24,6 +24,75 @@ function sendMsg(action, data) {
   });
 }
 
+// ── Unit costs (Supabase cost_items / house_rates) ──────────────────────────────
+// Shared by writeToEstimate() below and takeoff-workflow.js's own copy
+// (same duplication pattern as EXT_SITE_MAP/TK_SITE_MAP elsewhere in this
+// codebase — each surface is a standalone copy, not a shared import).
+
+const SUPABASE_URL_UC = 'https://fujddlemswhbdqrhpekt.supabase.co';
+const SUPABASE_ANON_UC = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4';
+
+// The BuilderTrend line-item titles this automation searches for (used
+// throughout popup.js/takeoff-workflow.js/tabpicker.js) don't all match
+// cost_items.item_name exactly — the Sheet used slightly different plural/
+// short forms when that table was first seeded. Bridges the ones that differ.
+const ITEM_NAME_TO_COST_ITEM_NAME = {
+  'Appliance Allowance': 'Appliances Allowance',
+  'Cabinet Allowance': 'Cabinets Allowance',
+  'Carpet Allowance': 'Carpets Allowance',
+  'Countertop Allowance': 'Counterop Allowance',
+  'Hardwood Flooring Allowance': 'Hardwood Allowance',
+  'Tile Allowance': 'Tile Selection Allowance'
+};
+
+// Returns { itemName: unitCost | undefined }. unitCost is undefined for any
+// name with no matching cost_items row — callers must treat that as "leave
+// BuilderTrend's existing rate alone", never as "write zero".
+//
+// selectedHouseKey: null → average every house_rates row flagged
+// include_in_average=true for that item (the Custom-Plan-style number).
+// A house key (e.g. 'kiawah') → that house's own rate only, no averaging —
+// used when a base plan was selected, since you're reconstructing a real
+// house's actual numbers, not a blend.
+async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
+  const lookupNames = itemNames.map(function(n) { return ITEM_NAME_TO_COST_ITEM_NAME[n] || n; });
+  const uniqueNames = Array.from(new Set(lookupNames));
+  const inList = uniqueNames.map(function(n) { return '"' + n.replace(/"/g, '\\"') + '"'; }).join(',');
+
+  const params = new URLSearchParams();
+  params.set('select', 'id,item_name,house_rates(house,amount,quantity,include_in_average)');
+  params.set('item_name', 'in.(' + inList + ')');
+
+  const res = await fetch(SUPABASE_URL_UC + '/rest/v1/cost_items?' + params.toString(), {
+    headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
+  });
+  if (!res.ok) throw new Error('Supabase cost_items read failed (' + res.status + '): ' + await res.text());
+  const rows = await res.json();
+
+  const byLookupName = {};
+  rows.forEach(function(r) { byLookupName[r.item_name] = r; });
+
+  const result = {};
+  itemNames.forEach(function(originalName) {
+    const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
+    const row = byLookupName[lookupName];
+    if (!row) { result[originalName] = undefined; return; }
+    const rates = row.house_rates || [];
+    function unitCostOf(hr) { return (hr.quantity > 0) ? (hr.amount / hr.quantity) : (hr.amount || 0); }
+
+    if (selectedHouseKey) {
+      const hr = rates.find(function(h) { return h.house === selectedHouseKey; });
+      result[originalName] = hr ? unitCostOf(hr) : undefined;
+    } else {
+      const included = rates.filter(function(h) { return h.include_in_average; });
+      if (!included.length) { result[originalName] = undefined; return; }
+      const sum = included.reduce(function(s, h) { return s + unitCostOf(h); }, 0);
+      result[originalName] = sum / included.length;
+    }
+  });
+  return result;
+}
+
 // ── AI Constants ──────────────────────────────────────────────────────────────
 
 const AI_LABELS = {
@@ -1359,6 +1428,24 @@ async function writeToEstimate() {
       const desc = tierDescription(tier);
       if (desc) item.description = desc;
     });
+
+    // Unit costs from the Supabase admin price list — every item gets one
+    // now, not just the allowances. This panel has no "base plan" concept,
+    // so it always uses the Custom-Plan-style average (every house_rates
+    // row flagged include_in_average), never a single house's own rate.
+    // Anon-key read, same pattern as READ_ALLOWANCE_TIER_MULTIPLIERS — no
+    // sign-in needed. A cost_items lookup miss for an item just leaves
+    // that item's unitCost unset, which tabpicker.js treats as "don't
+    // touch BuilderTrend's existing rate" rather than writing a guess.
+    try {
+      const unitCosts = await fetchUnitCostsFromSupabase(items.map(function(it) { return it.name; }), null);
+      items.forEach(function(item) {
+        const uc = unitCosts[item.name];
+        if (uc !== null && uc !== undefined) item.unitCost = uc;
+      });
+    } catch (e) {
+      console.warn('[Keel] unit costs unavailable from Supabase, BuilderTrend rates left untouched:', e.message);
+    }
 
     // Read site option dropdowns from extension panel
     const EXT_SITE_MAP = {
