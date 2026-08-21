@@ -247,9 +247,9 @@
           <label style="font-size:10px;color:#64748b;font-weight:600;">Base Plan</label>
           <select id="tk-baseplan-select" style="font-size:12px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#1e293b;">
             <option value="">— Select a plan —</option>
-            <option value="KIAWAH">Kiawah</option>
-            <option value="SANIBEL">Sanibel</option>
-            <option value="VERO">Vero</option>
+            <!-- Populated from Supabase's houses table by populateBasePlanOptions()
+                 in takeoff-workflow.js — not hardcoded, so a new base plan added
+                 via the admin page's "+ Add Base Plan" shows up here automatically. -->
           </select>
         </div>
         <button id="btn-baseplan-go" class="btn-primary tk-start-btn">Go →</button>

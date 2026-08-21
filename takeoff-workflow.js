@@ -277,6 +277,7 @@
     allowEnterForEstimate: false, // true only during the post-write-to-sheet estimate step
     seqStep:              0,     // current position in final 3-step sequence (0=Grab&Write, 1=WriteToEstimate, 2=ClientPreview, 3=done)
     seqMaxStep:           -1,    // highest step reached; -1 = sequence not started yet
+    selectedBasePlanHouse: null, // houses.key (e.g. 'kiawah') if "Start From a Base Plan" was used, else null — read by wireDynamicEstimateButton() to use that house's own unit costs instead of the average
   };
 
   // Returns a promise that resolves with 'skip' when the user presses Skip during automation
@@ -475,6 +476,7 @@
 
   async function runWorkflow() {
     wf.active = true;
+    wf.selectedBasePlanHouse = null; // this is the guided/manual path, not a base plan
     document.getElementById('tk-idle').classList.add('hidden');
     document.getElementById('tk-active').classList.remove('hidden');
     document.getElementById('tk-complete').classList.add('hidden');
@@ -1906,6 +1908,24 @@
           if (desc) item.description = desc;
         });
 
+        // Unit costs from the Supabase admin price list — every item gets
+        // one now, not just the allowances. If a base plan was used
+        // (wf.selectedBasePlanHouse set), use THAT house's own rate;
+        // otherwise the Custom-Plan-style average of every house_rates
+        // row flagged include_in_average. fetchUnitCostsFromSupabase() is
+        // defined in popup.js, not duplicated here — this file is only
+        // ever loaded in panel.html, always right after popup.js (see its
+        // script tags), so the function is already a global by this point.
+        try {
+          var tkUnitCosts = await fetchUnitCostsFromSupabase(items.map(function(it) { return it.name; }), wf.selectedBasePlanHouse);
+          items.forEach(function(item) {
+            var uc = tkUnitCosts[item.name];
+            if (uc !== null && uc !== undefined) item.unitCost = uc;
+          });
+        } catch (e) {
+          console.warn('[Keel] unit costs unavailable from Supabase, BuilderTrend rates left untouched:', e.message);
+        }
+
         // Read site option dropdowns (same as EXT_SITE_MAP in popup.js)
         var TK_SITE_MAP = {
           'tk-so-sewer': {
@@ -2010,7 +2030,37 @@
         entryGuidedBtn.classList.remove('active');
         tkBaseplanEl.classList.remove('hidden');
         tkIdleEl.classList.add('hidden');
+        populateBasePlanOptions(); // lazy — only needed once this panel is actually opened
       });
+    }
+
+    // Fills tk-baseplan-select from Supabase's houses table instead of a
+    // hardcoded Kiawah/Sanibel/Vero list, so a base plan added via the
+    // admin page's "+ Add Base Plan" shows up here with no code change.
+    // Re-fetches every time the panel opens (not cached) so a plan added
+    // mid-session shows up without reloading the extension.
+    var basePlanOptionsLoaded = false;
+    async function populateBasePlanOptions() {
+      var sel = document.getElementById('tk-baseplan-select');
+      if (!sel) return;
+      try {
+        var res = await fetch('https://fujddlemswhbdqrhpekt.supabase.co/rest/v1/houses?select=key,label&order=sort_order', {
+          headers: {
+            apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4'
+          }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var houses = await res.json();
+        var current = sel.value;
+        sel.innerHTML = '<option value="">— Select a plan —</option>' +
+          houses.map(function(h) { return '<option value="' + h.key.toUpperCase() + '">' + h.label + '</option>'; }).join('');
+        if (current && houses.some(function(h) { return h.key.toUpperCase() === current; })) sel.value = current;
+        basePlanOptionsLoaded = true;
+      } catch (e) {
+        console.warn('[Keel] could not load base plan list from Supabase:', e.message);
+        // Leave whatever was already in the dropdown (empty on first load,
+        // or the previous successful fetch's options on a later failure).
+      }
     }
 
     // ── "Start From a Base Plan" — Go button ─────────────────────────────────
@@ -2021,6 +2071,9 @@
         var statusEl = document.getElementById('tk-baseplan-status');
         var key = sel && sel.value;
         if (!key) { if (statusEl) statusEl.textContent = 'Select a base plan first.'; return; }
+        // Remembered so wireDynamicEstimateButton() uses THIS house's own
+        // unit costs instead of the averaged Custom-Plan-style number.
+        wf.selectedBasePlanHouse = key.toLowerCase();
 
         baseplanGoBtn.disabled = true;
         baseplanGoBtn.textContent = 'Loading plan…';
