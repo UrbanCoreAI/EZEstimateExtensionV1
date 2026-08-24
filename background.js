@@ -967,7 +967,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           // Called from webpage-bridge.js on behalf of the public Keel Quick
           // Quote webpage. Stash the items and open the tab-picker window —
           // it reads them back out of session storage once it loads.
-          await chrome.storage.session.set({ pendingEstimateItems: msg.items || [], pendingCustomItems: msg.customItems || [], pendingSiteOptions: msg.siteOptions || [], pendingClientPreview: false, pendingSlowConnection: !!msg.slowConnection });
+          //
+          // pendingNotifyEstimator/pendingNotifyItemNames are ONLY ever set
+          // here — this is the one message action exclusively used by the
+          // webpage handoff, never by the extension's own popup/panel Write
+          // to Estimate. That's what scopes the custom-pricing-notification
+          // email to the webpage path specifically, per the feature's own
+          // requirement not to touch the extension's native write paths.
+          await chrome.storage.session.set({
+            pendingEstimateItems: msg.items || [],
+            pendingCustomItems: msg.customItems || [],
+            pendingSiteOptions: msg.siteOptions || [],
+            pendingClientPreview: false,
+            pendingSlowConnection: !!msg.slowConnection,
+            pendingNotifyEstimator: !!msg.notifyEstimator,
+            pendingNotifyItemNames: msg.notifyItemNames || []
+          });
           const pickerUrl = chrome.runtime.getURL('tabpicker.html');
           await chrome.windows.create({
             url: pickerUrl,
@@ -981,7 +996,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
 
         case 'RUN_CLIENT_PREVIEW': {
-          await chrome.storage.session.set({ pendingClientPreview: true, pendingEstimateItems: [], pendingCustomItems: [], pendingSlowConnection: !!msg.slowConnection });
+          // Explicitly zeroed (not just omitted) — chrome.storage.session.set
+          // merges with whatever's already there, so a prior webpage Write to
+          // Estimate's pendingNotifyEstimator=true would otherwise leak into
+          // this unrelated client-preview run.
+          await chrome.storage.session.set({ pendingClientPreview: true, pendingEstimateItems: [], pendingCustomItems: [], pendingSlowConnection: !!msg.slowConnection, pendingNotifyEstimator: false, pendingNotifyItemNames: [] });
           const cpPickerUrl = chrome.runtime.getURL('tabpicker.html');
           await chrome.windows.create({
             url: cpPickerUrl,

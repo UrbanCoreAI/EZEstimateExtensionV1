@@ -1674,12 +1674,19 @@ async function writeToEstimate() {
     // Store gathered items/site-options/custom-allowances and hand off to
     // the shared tab-picker + write flow (tabpicker.html/tabpicker.js) —
     // the same one used by guided takeoff, base plan, and the webpage.
+    // pendingNotifyEstimator/pendingNotifyItemNames explicitly cleared —
+    // that feature is webpage-only (set exclusively by background.js's
+    // OPEN_ESTIMATE_TAB_PICKER handler); chrome.storage.session.set merges
+    // with existing keys, so a prior webpage-triggered write's flags would
+    // otherwise leak into this extension-native one.
     await chrome.storage.session.set({
       pendingEstimateItems: items,
       pendingCustomItems: customItems,
       pendingSiteOptions: siteOptions,
       pendingClientPreview: false,
-      pendingSlowConnection: slowConnection
+      pendingSlowConnection: slowConnection,
+      pendingNotifyEstimator: false,
+      pendingNotifyItemNames: []
     });
     await chrome.windows.create({
       url: chrome.runtime.getURL('tabpicker.html'),
