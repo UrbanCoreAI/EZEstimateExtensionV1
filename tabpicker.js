@@ -405,7 +405,37 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         _log.push('⚠ ' + contextLabel + ': markup field not found — leaving BuilderTrend\'s default markup in place');
         return false;
       }
-      writeReactValue(markupInput, Math.round(parseFloat(markupPercent) * 100) / 100);
+
+      // NOT writeReactValue()/execCommand — that inserts the whole string
+      // in one shot, and this specific field (class "PercentageInput", its
+      // own per-keystroke masking) turned out to mangle that into a 10x
+      // value (30 became 300 in testing). setQty()'s character-by-character
+      // typing simulation already handles Ant Design numeric inputs
+      // correctly (proven for both the quantity and unit-cost fields), so
+      // this reuses that exact same approach instead of guessing at a
+      // second fix for the same class of masked-input problem.
+      var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      markupInput.focus();
+      await _delay(100);
+      if (typeof markupInput.select === 'function') markupInput.select();
+      markupInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, ctrlKey: true, bubbles: true }));
+      await _delay(50);
+      markupInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', keyCode: 46, bubbles: true }));
+      nativeSetter.call(markupInput, '');
+      markupInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await _delay(100);
+
+      var valStr = String(Math.round(parseFloat(markupPercent) * 100) / 100);
+      for (var ci = 0; ci < valStr.length; ci++) {
+        var ch = valStr[ci];
+        var code = ch.charCodeAt(0);
+        markupInput.dispatchEvent(new KeyboardEvent('keydown', { key: ch, keyCode: code, bubbles: true }));
+        markupInput.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, bubbles: true }));
+        nativeSetter.call(markupInput, valStr.slice(0, ci + 1));
+        markupInput.dispatchEvent(new Event('input', { bubbles: true }));
+        markupInput.dispatchEvent(new KeyboardEvent('keyup', { key: ch, keyCode: code, bubbles: true }));
+        await _delay(20);
+      }
       await _delay(200);
       return true;
     }
