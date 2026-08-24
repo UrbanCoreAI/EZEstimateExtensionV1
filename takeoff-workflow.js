@@ -1973,14 +1973,17 @@
         // defined in popup.js, not duplicated here — this file is only
         // ever loaded in panel.html, always right after popup.js (see its
         // script tags), so the function is already a global by this point.
+        console.log('[Keel][unitcost] takeoff-workflow.js wireDynamicEstimateButton(): wf.selectedBasePlanHouse=' + JSON.stringify(wf.selectedBasePlanHouse));
         try {
           var tkUnitCosts = await fetchUnitCostsFromSupabase(items.map(function(it) { return it.name; }), wf.selectedBasePlanHouse);
+          var tkSetCount = 0;
           items.forEach(function(item) {
             var uc = tkUnitCosts[item.name];
-            if (uc !== null && uc !== undefined) item.unitCost = uc;
+            if (uc !== null && uc !== undefined) { item.unitCost = uc; tkSetCount++; }
           });
+          console.log('[Keel][unitcost] takeoff-workflow.js: set unitCost on ' + tkSetCount + ' of ' + items.length + ' item(s)');
         } catch (e) {
-          console.warn('[Keel] unit costs unavailable from Supabase, BuilderTrend rates left untouched:', e.message);
+          console.error('[Keel][unitcost] takeoff-workflow.js: fetch threw, NO items got a unitCost this run. Full error:', e);
         }
 
         // Read site option dropdowns (same as EXT_SITE_MAP in popup.js)

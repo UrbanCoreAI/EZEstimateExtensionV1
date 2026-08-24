@@ -95,6 +95,8 @@ const QUANTITY_FROM_FORMULA_ITEMS = [
 // used when a base plan was selected, since you're reconstructing a real
 // house's actual numbers, not a blend.
 async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
+  console.log('[Keel][unitcost] fetchUnitCostsFromSupabase called with selectedHouseKey=' + JSON.stringify(selectedHouseKey) + ', ' + itemNames.length + ' item(s):', itemNames);
+
   const lookupNames = itemNames.map(function(n) { return ITEM_NAME_TO_COST_ITEM_NAME[n] || n; });
   const uniqueNames = Array.from(new Set(lookupNames));
   const inList = uniqueNames.map(function(n) { return '"' + n.replace(/"/g, '\\"') + '"'; }).join(',');
@@ -103,33 +105,57 @@ async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
   params.set('select', 'id,item_name,house_rates(house,amount,quantity,include_in_average)');
   params.set('item_name', 'in.(' + inList + ')');
 
-  const res = await fetch(SUPABASE_URL_UC + '/rest/v1/cost_items?' + params.toString(), {
-    headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
-  });
-  if (!res.ok) throw new Error('Supabase cost_items read failed (' + res.status + '): ' + await res.text());
+  const url = SUPABASE_URL_UC + '/rest/v1/cost_items?' + params.toString();
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
+    });
+  } catch (networkErr) {
+    console.error('[Keel][unitcost] fetch() itself threw (network/CSP/offline?) for URL:', url, networkErr);
+    throw networkErr;
+  }
+  if (!res.ok) {
+    const bodyText = await res.text();
+    console.error('[Keel][unitcost] Supabase returned HTTP ' + res.status + ' for URL:', url, 'body:', bodyText);
+    throw new Error('Supabase cost_items read failed (' + res.status + '): ' + bodyText);
+  }
   const rows = await res.json();
+  console.log('[Keel][unitcost] Supabase returned ' + rows.length + ' cost_items row(s) for ' + uniqueNames.length + ' requested name(s)');
 
   const byLookupName = {};
   rows.forEach(function(r) { byLookupName[r.item_name] = r; });
 
   const result = {};
+  let resolvedCount = 0, noRowCount = 0, noRateCount = 0;
   itemNames.forEach(function(originalName) {
     const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
     const row = byLookupName[lookupName];
-    if (!row) { result[originalName] = undefined; return; }
+    if (!row) { result[originalName] = undefined; noRowCount++; return; }
     const rates = row.house_rates || [];
     function unitCostOf(hr) { return (hr.quantity > 0) ? (hr.amount / hr.quantity) : (hr.amount || 0); }
 
     if (selectedHouseKey) {
       const hr = rates.find(function(h) { return h.house === selectedHouseKey; });
+      if (!hr) {
+        console.warn('[Keel][unitcost] "' + originalName + '" (cost_items name "' + lookupName + '") has no house_rates row for house="' + selectedHouseKey + '" — houses present: ' + rates.map(function(h){return h.house;}).join(','));
+        noRateCount++;
+      }
       result[originalName] = hr ? unitCostOf(hr) : undefined;
     } else {
       const included = rates.filter(function(h) { return h.include_in_average; });
-      if (!included.length) { result[originalName] = undefined; return; }
+      if (!included.length) {
+        console.warn('[Keel][unitcost] "' + originalName + '" (cost_items name "' + lookupName + '") has ZERO house_rates rows with include_in_average=true out of ' + rates.length + ' total — averaging is impossible for this item.', rates);
+        noRateCount++;
+        result[originalName] = undefined;
+        return;
+      }
       const sum = included.reduce(function(s, h) { return s + unitCostOf(h); }, 0);
       result[originalName] = sum / included.length;
     }
+    if (result[originalName] !== undefined) resolvedCount++;
   });
+  console.log('[Keel][unitcost] result: ' + resolvedCount + ' resolved, ' + noRowCount + ' had no matching cost_items row, ' + noRateCount + ' had no usable house_rates row');
   return result;
 }
 
@@ -1562,12 +1588,14 @@ async function writeToEstimate() {
     // touch BuilderTrend's existing rate" rather than writing a guess.
     try {
       const unitCosts = await fetchUnitCostsFromSupabase(items.map(function(it) { return it.name; }), null);
+      let setCount = 0;
       items.forEach(function(item) {
         const uc = unitCosts[item.name];
-        if (uc !== null && uc !== undefined) item.unitCost = uc;
+        if (uc !== null && uc !== undefined) { item.unitCost = uc; setCount++; }
       });
+      console.log('[Keel][unitcost] popup.js writeToEstimate(): set unitCost on ' + setCount + ' of ' + items.length + ' item(s)');
     } catch (e) {
-      console.warn('[Keel] unit costs unavailable from Supabase, BuilderTrend rates left untouched:', e.message);
+      console.error('[Keel][unitcost] popup.js writeToEstimate(): fetch threw, NO items got a unitCost this run. Full error:', e);
     }
 
     // Read site option dropdowns from extension panel
