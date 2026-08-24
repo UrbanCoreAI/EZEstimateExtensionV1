@@ -1295,107 +1295,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       _log.push('✓ setItemDescription: ' + searchName + ' → "' + description + '"');
     }
 
-    // Like setItemDescription, but writes the Unit Cost cell instead of the
-    // description — used to push a Supabase-sourced unit cost onto every
-    // item that only ever got a quantity before (setQty doesn't touch cost
-    // at all). Confirmed against a real captured DOM snippet: the cost
-    // input is input[data-testid="unitCost"], same element editExistingItem
-    // already targets for the 4 site-option items — this just reuses that
-    // exact selector for every other item too.
-    async function setItemUnitCost(searchName, unitCost) {
-      if (unitCost === null || unitCost === undefined || isNaN(unitCost)) return;
-
-      // Step 1: Search for item → click LineItemResult to open edit panel
-      var siU = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-      if (!siU) {
-        var candsU = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-        siU = candsU.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-      }
-      var nsU = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      if (siU) {
-        var contU = siU.closest('.ant-select-selector') || siU.parentElement;
-        if (contU) { contU.click(); await _delay(200); }
-        siU.focus(); await _delay(100);
-        nsU.call(siU, searchName);
-        siU.dispatchEvent(new Event('input',{bubbles:true}));
-        siU.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(900);
-        var uResult = null;
-        var uItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-        for (var uli=0; uli<uItems.length; uli++) {
-          if ((uItems[uli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { uResult = uItems[uli]; break; }
-        }
-        if (uResult) {
-          uResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          uResult.click();
-          await _delay(1000);
-        }
-        nsU.call(siU, '');
-        siU.dispatchEvent(new Event('input',{bubbles:true}));
-        siU.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(400);
-      }
-
-      // Step 2: Find the exact <b> tag in the table with matching text → click its row
-      var targetRowU = null;
-      for (var tdiU=0; tdiU<20; tdiU++) {
-        var bTagsU = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
-        for (var tdi2U=0; tdi2U<bTagsU.length; tdi2U++) {
-          if ((bTagsU[tdi2U].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-            targetRowU = bTagsU[tdi2U].closest('tr.proposalBaseLineItemContainerRow');
-            break;
-          }
-        }
-        if (targetRowU) break;
-        await _delay(150);
-      }
-      if (!targetRowU) { _log.push('⚠ setItemUnitCost: row not found for ' + searchName); return; }
-      targetRowU.click();
-      await _delay(800);
-
-      // Step 3: Click the unit cost cell in the row → set cost
-      var costCellU = targetRowU.querySelector('td[data-testid="cell-unitCost"] .ValueDisplay') ||
-                     targetRowU.querySelector('td[data-testid="cell-unitCost"]');
-      if (!costCellU) { _log.push('⚠ setItemUnitCost: cost cell not found for ' + searchName); return; }
-      costCellU.click();
-      await _delay(400);
-      var costInpU = null;
-      for (var ciiU=0; ciiU<15; ciiU++) {
-        costInpU = document.querySelector('input[data-testid="unitCost"]');
-        if (costInpU) break;
-        await _delay(100);
-      }
-      if (!costInpU) { _log.push('⚠ setItemUnitCost: cost input did not appear for ' + searchName); return; }
-      costInpU.focus();
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-      document.execCommand('insertText', false, String(unitCost));
-      await _delay(300);
-
-      // Step 4: Save — same coordinate-click + dirty-tracking-popup pattern
-      var sideElU = document.querySelector('.ant-layout-sider, aside');
-      var saveXU = sideElU ? sideElU.getBoundingClientRect().right + 5 : 10;
-      var saveYU = window.innerHeight / 2;
-      var saveTargetU = document.elementFromPoint(saveXU, saveYU) || document.body;
-      saveTargetU.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXU,clientY:saveYU}));
-      await _delay(150);
-      saveTargetU.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXU,clientY:saveYU}));
-      await _delay(900);
-
-      var dirtySaveU = null;
-      for (var dsU=0; dsU<15; dsU++) {
-        dirtySaveU = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveU) break;
-        await _delay(150);
-      }
-      if (dirtySaveU) {
-        dirtySaveU.click();
-        await _delay(800);
-      }
-
-      _log.push('✓ setItemUnitCost: ' + searchName + ' → $' + unitCost);
-    }
-
     // Like editExistingItem, but scoped to a specific group's rows only —
     // "Place Holder" is not a unique title page-wide (multiple groups each
     // have their own default placeholder), so a global text search can
@@ -1565,9 +1464,14 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         // Supabase-sourced unit cost — only set when the caller actually
         // resolved one (no match in cost_items => undefined => skipped,
         // leaving BuilderTrend's own preset rate untouched rather than
-        // guessing or writing a zero).
+        // guessing or writing a zero). Reuses setQty's own isUnitCost=true
+        // path (already proven — this is the same mechanism the Realtor
+        // Fees grand-total write already uses below) rather than the
+        // separate side-panel approach setItemUnitCost() used, which opens
+        // a different BT UI surface than the small popup setQty already
+        // knows how to drive.
         if (itemsList[i].unitCost !== undefined && itemsList[i].unitCost !== null) {
-          await setItemUnitCost(itemsList[i].name, itemsList[i].unitCost);
+          await setQty(itemsList[i].name, itemsList[i].unitCost, true);
         }
       }
     }
