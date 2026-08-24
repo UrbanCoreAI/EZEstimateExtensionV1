@@ -2040,8 +2040,13 @@
           });
         }
 
-        // Store in session and open tab picker
-        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems, pendingSiteOptions: siteOptions, pendingClientPreview: false, pendingSlowConnection: false });
+        // Store in session and open tab picker. pendingNotifyEstimator/
+        // pendingNotifyItemNames explicitly cleared — webpage-only feature,
+        // set exclusively by background.js's OPEN_ESTIMATE_TAB_PICKER
+        // handler; chrome.storage.session.set merges with existing keys,
+        // so a prior webpage-triggered write's flags would otherwise leak
+        // into this extension-native one.
+        await chrome.storage.session.set({ pendingEstimateItems: items, pendingCustomItems: customItems, pendingSiteOptions: siteOptions, pendingClientPreview: false, pendingSlowConnection: false, pendingNotifyEstimator: false, pendingNotifyItemNames: [] });
         await chrome.windows.create({
           url: chrome.runtime.getURL('tabpicker.html'),
           type: 'popup', width: 560, height: 520

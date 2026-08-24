@@ -6,6 +6,8 @@ var pendingCustomItems = [];
 var pendingSiteOptions = [];
 var pendingClientPreview = false;
 var pendingSlowConnection = false;
+var pendingNotifyEstimator = false; // webpage-only feature — see background.js's OPEN_ESTIMATE_TAB_PICKER handler
+var pendingNotifyItemNames = [];
 var _writeTabId = null;
 
 document.addEventListener('DOMContentLoaded', init);
@@ -20,12 +22,14 @@ function stopWrite() {
 }
 
 async function init() {
-  var data = await chrome.storage.session.get(['pendingEstimateItems','pendingCustomItems','pendingSiteOptions','pendingClientPreview','pendingSlowConnection']);
+  var data = await chrome.storage.session.get(['pendingEstimateItems','pendingCustomItems','pendingSiteOptions','pendingClientPreview','pendingSlowConnection','pendingNotifyEstimator','pendingNotifyItemNames']);
   pendingItems = data.pendingEstimateItems || [];
   pendingCustomItems = data.pendingCustomItems || [];
   pendingSiteOptions = data.pendingSiteOptions || [];
   pendingClientPreview = !!data.pendingClientPreview;
   pendingSlowConnection = !!data.pendingSlowConnection;
+  pendingNotifyEstimator = !!data.pendingNotifyEstimator;
+  pendingNotifyItemNames = data.pendingNotifyItemNames || [];
 
   if (pendingClientPreview) {
     document.querySelector('.hdr-title').textContent = 'Start Prelim - Budget Client Preview';
@@ -202,7 +206,7 @@ async function selectTab(tab) {
     var result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: writeEstimateInPage,
-      args: [pendingItems, pendingCustomItems, pendingSiteOptions, slowConnection]
+      args: [pendingItems, pendingCustomItems, pendingSiteOptions, slowConnection, pendingNotifyEstimator, pendingNotifyItemNames]
     });
 
     var res2 = result && result[0] && result[0].result;
@@ -315,7 +319,7 @@ async function selectTab(tab) {
 }
 
 // Injected into the target tab via chrome.scripting.executeScript.
-async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, slowConnection) {
+async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, slowConnection, notifyEstimator, notifyItemNames) {
   try {
     var _log = [];
     // Every wait in this function funnels through _delay — doubling it here
@@ -1614,6 +1618,45 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await setItemMarkupAndDescription('Realtor Fees', markupPercent, undefined);
       } else {
         _log.push('⚠ Could not detect estimate total for Realtor Fees');
+      }
+    }
+
+    // Custom-pricing-needed notification email — webpage Write to Estimate
+    // only (notifyEstimator/notifyItemNames only ever arrive non-empty from
+    // background.js's OPEN_ESTIMATE_TAB_PICKER handler; the extension's own
+    // popup/panel write paths explicitly zero these out). Runs only on a
+    // completed, non-stopped write.
+    if (!stopped && notifyEstimator && notifyItemNames && notifyItemNames.length) {
+      try {
+        var jobNameEl = document.querySelector('.estimate-breadcrumb-item')
+                     || document.querySelector('[data-testid^="breadcrumb-JOB"]');
+        var jobName = '';
+        if (jobNameEl) {
+          jobName = (jobNameEl.textContent || '').trim().replace(/^JOB:\s*/i, '');
+        }
+        if (!jobName) {
+          _log.push('⚠ Could not find the job name breadcrumb on this page — sending notification without one');
+          jobName = '(unknown job)';
+        }
+
+        _log.push('Sending custom-pricing-needed notification for: ' + notifyItemNames.join(', '));
+        var notifyRes = await fetch('https://fujddlemswhbdqrhpekt.supabase.co/functions/v1/send-pricing-notification', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4',
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4'
+          },
+          body: JSON.stringify({ jobName: jobName, items: notifyItemNames })
+        });
+        var notifyBody = await notifyRes.json().catch(function () { return {}; });
+        if (notifyRes.ok && notifyBody.ok) {
+          _log.push('✓ Notification email sent to the estimator');
+        } else {
+          _log.push('✗ Notification email failed: ' + (notifyBody.error || ('HTTP ' + notifyRes.status)));
+        }
+      } catch (notifyErr) {
+        _log.push('✗ Notification email failed: ' + notifyErr.message);
       }
     }
 

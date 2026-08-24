@@ -8,7 +8,7 @@
 //
 // Protocol (window.postMessage, since the webpage has no direct access
 // to chrome.runtime):
-//   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'OPEN_ESTIMATE_TAB_PICKER', items: [...], slowConnection: bool }
+//   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'OPEN_ESTIMATE_TAB_PICKER', items: [...], slowConnection: bool, notifyEstimator: bool, notifyItemNames: [...] }
 //   Page  -> Bridge : { source: 'keel-quick-quote',     type: 'RUN_CLIENT_PREVIEW', slowConnection: bool }
 //   Bridge -> Page  : { source: 'duke-ext',             type: 'EXTENSION_READY' }
 //   Bridge -> Page  : { source: 'duke-ext',             type: 'OPEN_ESTIMATE_TAB_PICKER_RESULT', ok, error }
@@ -36,7 +36,7 @@
 
     if (data.type === 'OPEN_ESTIMATE_TAB_PICKER') {
       chrome.runtime.sendMessage(
-        { action: 'OPEN_ESTIMATE_TAB_PICKER', items: data.items || [], customItems: data.customItems || [], siteOptions: data.siteOptions || [], slowConnection: !!data.slowConnection },
+        { action: 'OPEN_ESTIMATE_TAB_PICKER', items: data.items || [], customItems: data.customItems || [], siteOptions: data.siteOptions || [], slowConnection: !!data.slowConnection, notifyEstimator: !!data.notifyEstimator, notifyItemNames: data.notifyItemNames || [] },
         function (res) {
           var err = chrome.runtime.lastError;
           window.postMessage({
