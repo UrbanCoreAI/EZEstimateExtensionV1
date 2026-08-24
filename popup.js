@@ -46,15 +46,43 @@ const ITEM_NAME_TO_COST_ITEM_NAME = {
   'Garage Door': 'Garage Overhead Doors'
 };
 
-// The 9 allowances + Landscaping + Garage Door — every one of these used to
-// be a hardcoded Sheet D-cell number that drifted out of alignment when
-// rows shifted. Their quantity now comes from Supabase's quantity_formula
-// instead (see evaluateQuantityFormula above), which only ever references
-// stable I-cells.
+// Separate from the map above on purpose: these 6 subtotal labels have no
+// cost_items row of their own, and the "proxy" item each maps to is only
+// valid for borrowing its QUANTITY (both happen to equal the same group
+// square footage) — its unit cost is a completely different, unrelated
+// number and must never be looked up this way. Mixing this into
+// ITEM_NAME_TO_COST_ITEM_NAME would make fetchUnitCostsFromSupabase()
+// silently write e.g. Drywall's $/SF rate onto "Total Finished SF"'s line.
+// Sheet's subtotal rows never carry a quantity at all — only their own
+// $0.00 Amount column is populated (confirmed live) — hence needing a
+// proxy in the first place. Chosen by matching each label's stated
+// meaning to a specific item's actual formula, not by row proximity —
+// child rows in the same group can have genuinely different formulas that
+// only coincidentally produce the same number for whichever job happens
+// to be loaded (confirmed this varies).
+const QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME = {
+  'Total Finished SF': 'Drywall',                                                    // =$I$4+$I$5+$I$6 (all finished floors)
+  'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)': 'Siding Labor/ Siding Turnkey', // =$I$4+$I$5+$I$6+$I$12
+  'Total 1st Floor, Garage & Porch SF': 'Roofing',                                    // =$I$4+$I$12+$I$9+$I$10
+  'Total 1st Floor Finished, 1st Floor Unfinished & Garage': 'Stone/ Gravel',         // =$I$4+$I$12
+  'Total Finished 1st Floor SF': 'Insulation Crawlspace',                             // =$I$4
+  'Total Garage SF': 'Concrete Flatwork Turnkey'                                      // =$I$12
+};
+
+// Everything below used to be a hardcoded Sheet D-cell number that drifted
+// out of alignment when rows shifted (several ended up blank/0, since
+// they'd landed on a subtotal row that never carries a quantity at all).
+// All of it now comes from Supabase's quantity_formula instead (see
+// evaluateQuantityFormula above), which only ever references I-cells — the
+// fixed-position raw-measurement table that does not move when the item
+// list grows or shrinks below it.
 const QUANTITY_FROM_FORMULA_ITEMS = [
   'Accessories Allowance', 'Appliance Allowance', 'Cabinet Allowance', 'Carpet Allowance',
   'Countertop Allowance', 'Hardwood Flooring Allowance', 'Lighting Fixture Allowance',
-  'Plumbing Fixture Allowance', 'Tile Allowance', 'Landscaping Allowance', 'Garage Door'
+  'Plumbing Fixture Allowance', 'Tile Allowance', 'Landscaping Allowance', 'Garage Door',
+  'Total Finished SF', 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',
+  'Total 1st Floor, Garage & Porch SF', 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',
+  'Total Finished 1st Floor SF', 'Total Garage SF'
 ];
 
 // Returns { itemName: unitCost | undefined }. unitCost is undefined for any
@@ -134,8 +162,14 @@ function evaluateQuantityFormula(formula, cellValues) {
   return total;
 }
 
+function quantityLookupName(originalName) {
+  // Quantity-only proxy names take priority — they exist specifically
+  // because these 6 labels have no cost_items row of their own at all.
+  return QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME[originalName] || ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
+}
+
 async function fetchQuantityFormulasFromSupabase(itemNames) {
-  const lookupNames = itemNames.map(function(n) { return ITEM_NAME_TO_COST_ITEM_NAME[n] || n; });
+  const lookupNames = itemNames.map(quantityLookupName);
   const uniqueNames = Array.from(new Set(lookupNames));
   const inList = uniqueNames.map(function(n) { return '"' + n.replace(/"/g, '\\"') + '"'; }).join(',');
 
@@ -154,8 +188,7 @@ async function fetchQuantityFormulasFromSupabase(itemNames) {
 
   const result = {};
   itemNames.forEach(function(originalName) {
-    const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
-    result[originalName] = byLookupName[lookupName]; // undefined if no match — caller must not guess
+    result[originalName] = byLookupName[quantityLookupName(originalName)]; // undefined if no match — caller must not guess
   });
   return result;
 }
@@ -1417,18 +1450,15 @@ async function writeToEstimate() {
 
   try {
     log('Reading sheet values…');
-    // Subtotal-only labels (no matching cost_items row, so their quantity
-    // can't come from a quantity_formula) — D-cell refs re-verified against
-    // the LIVE sheet on 2026-08-21 after several of these drifted when rows
-    // were inserted above them (D32->D34, D46->D48, D50->D52, D56->D58,
-    // D59->D61, D62->D64, D99->D100). This is a one-time correction, not a
-    // structural fix — if the sheet's row layout changes again these could
-    // drift again. Everything else below reads I-cells directly or via
-    // Supabase's quantity_formula, both immune to this kind of drift.
+    // The 6 "TOTAL FOR..." subtotal labels have no cost_items row of their
+    // own, and it turns out the Sheet's subtotal rows never carry a
+    // quantity at all — only their own $0.00 Amount column is populated
+    // (verified live). Every one of these now comes from Supabase's
+    // quantity_formula instead — no D-cell reads needed anywhere in this
+    // function anymore.
     const cells = await sendMsg('READ_CELLS_BATCH', {
-      ranges: ['I13','D34','D48','D52','D58','D61','D64','D100','I4','I5','I6',
-               'I9','I10','I11','I12','I18','I19','I20','I21','I22','I23','I24',
-               'I25','I26','I27','I28','I29']
+      ranges: ['I13','I4','I5','I6','I9','I10','I11','I12','I18','I19','I20',
+               'I21','I22','I23','I24','I25','I26','I27','I28','I29']
     });
     const c = cells.data;
     const n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
@@ -1436,12 +1466,12 @@ async function writeToEstimate() {
     const items = [
       { name: 'Total Fixed Cost',                                                    qty: 1 },
       { name: 'Total Finished SF & Unfinished (Under Roof)',                         qty: n(c['I13']) },
-      { name: 'Total Finished SF',                                                   qty: n(c['D48']) },
-      { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',     qty: n(c['D34']) },
-      { name: 'Total Garage SF',                                                     qty: n(c['D64']) },
-      { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D58']) },
-      { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D52']) },
-      { name: 'Total Finished 1st Floor SF',                                        qty: n(c['D61']) },
+      { name: 'Total Finished SF',                                                   qty: 0 }, // resolved below via quantity_formula
+      { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',     qty: 0 },
+      { name: 'Total Garage SF',                                                     qty: 0 },
+      { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: 0 },
+      { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: 0 },
+      { name: 'Total Finished 1st Floor SF',                                        qty: 0 },
       { name: 'Total for Decks & Porches',                                          qty: n(c['I9']) + n(c['I10']) + n(c['I11']) },
       { name: 'Interior Stairs',    qty: n(c['I23']) },
       { name: 'Exterior Doors',     qty: n(c['I18']) },
@@ -1465,11 +1495,12 @@ async function writeToEstimate() {
       { name: 'Tap Fees',              qty: 1 },
     ];
 
-    // Fill in the quantity_formula-driven items (allowances + Garage Door +
-    // Landscaping) from Supabase, evaluated against the I-cells already
-    // read above. A lookup miss or a fetch failure leaves that item's
-    // qty at the 0 placeholder set above rather than guessing — check the
-    // write log for a console warning if that happens.
+    // Fill in every quantity_formula-driven item (QUANTITY_FROM_FORMULA_ITEMS
+    // — the 9 allowances, Garage Door, Landscaping, and the 6 subtotal
+    // proxies) from Supabase, evaluated against the I-cells already read
+    // above. A lookup miss or a fetch failure leaves that item's qty at
+    // the 0 placeholder set above rather than guessing — check the write
+    // log for a console warning if that happens.
     try {
       const qtyFormulas = await fetchQuantityFormulasFromSupabase(QUANTITY_FROM_FORMULA_ITEMS);
       items.forEach(function(item) {
