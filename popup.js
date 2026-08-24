@@ -42,8 +42,20 @@ const ITEM_NAME_TO_COST_ITEM_NAME = {
   'Carpet Allowance': 'Carpets Allowance',
   'Countertop Allowance': 'Counterop Allowance',
   'Hardwood Flooring Allowance': 'Hardwood Allowance',
-  'Tile Allowance': 'Tile Selection Allowance'
+  'Tile Allowance': 'Tile Selection Allowance',
+  'Garage Door': 'Garage Overhead Doors'
 };
+
+// The 9 allowances + Landscaping + Garage Door — every one of these used to
+// be a hardcoded Sheet D-cell number that drifted out of alignment when
+// rows shifted. Their quantity now comes from Supabase's quantity_formula
+// instead (see evaluateQuantityFormula above), which only ever references
+// stable I-cells.
+const QUANTITY_FROM_FORMULA_ITEMS = [
+  'Accessories Allowance', 'Appliance Allowance', 'Cabinet Allowance', 'Carpet Allowance',
+  'Countertop Allowance', 'Hardwood Flooring Allowance', 'Lighting Fixture Allowance',
+  'Plumbing Fixture Allowance', 'Tile Allowance', 'Landscaping Allowance', 'Garage Door'
+];
 
 // Returns { itemName: unitCost | undefined }. unitCost is undefined for any
 // name with no matching cost_items row — callers must treat that as "leave
@@ -89,6 +101,61 @@ async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
       const sum = included.reduce(function(s, h) { return s + unitCostOf(h); }, 0);
       result[originalName] = sum / included.length;
     }
+  });
+  return result;
+}
+
+// Quantities from Supabase cost_items.quantity_formula, instead of a
+// hardcoded D-cell number on the Sheet. This exists because the Sheet's
+// item rows have shifted over time (a new row inserted before an
+// allowance, etc.) and every hardcoded "D86", "D88"... reference quietly
+// went stale — the exact bug this fixes. quantity_formula text only ever
+// references I-cells (e.g. "=$I$4+$I$5+$I$6" or "=I21") — the fixed-
+// position raw-measurement mini-table, which does NOT shift when rows are
+// inserted/removed further down in the item list — so evaluating it
+// directly is immune to that drift entirely, not just a one-time patch.
+//
+// cellValues: a plain object of already-read cell values keyed like
+// {'I4': '1234', 'I21': '33', ...} — either straight from READ_CELLS_BATCH
+// (regular flow) or from the base-plan's own {areaKeys/countKeys: value}
+// object translated to I-refs (see takeoff-workflow.js's base-plan flow).
+function evaluateQuantityFormula(formula, cellValues) {
+  const n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
+  const f = (formula || '').trim();
+  if (f === '') return 0;
+  if (f.charAt(0) !== '=') { const num = Number(f); return isFinite(num) ? num : 0; }
+  const body = f.slice(1);
+  let total = 0;
+  let m;
+  const re = /\$?I\$?(\d+)/g;
+  while ((m = re.exec(body)) !== null) {
+    total += n(cellValues['I' + m[1]]);
+  }
+  return total;
+}
+
+async function fetchQuantityFormulasFromSupabase(itemNames) {
+  const lookupNames = itemNames.map(function(n) { return ITEM_NAME_TO_COST_ITEM_NAME[n] || n; });
+  const uniqueNames = Array.from(new Set(lookupNames));
+  const inList = uniqueNames.map(function(n) { return '"' + n.replace(/"/g, '\\"') + '"'; }).join(',');
+
+  const params = new URLSearchParams();
+  params.set('select', 'item_name,quantity_formula');
+  params.set('item_name', 'in.(' + inList + ')');
+
+  const res = await fetch(SUPABASE_URL_UC + '/rest/v1/cost_items?' + params.toString(), {
+    headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
+  });
+  if (!res.ok) throw new Error('Supabase cost_items read failed (' + res.status + '): ' + await res.text());
+  const rows = await res.json();
+
+  const byLookupName = {};
+  rows.forEach(function(r) { byLookupName[r.item_name] = r.quantity_formula; });
+
+  const result = {};
+  itemNames.forEach(function(originalName) {
+    const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
+    result[originalName] = byLookupName[lookupName]; // undefined if no match — caller must not guess
   });
   return result;
 }
@@ -1350,10 +1417,18 @@ async function writeToEstimate() {
 
   try {
     log('Reading sheet values…');
+    // Subtotal-only labels (no matching cost_items row, so their quantity
+    // can't come from a quantity_formula) — D-cell refs re-verified against
+    // the LIVE sheet on 2026-08-21 after several of these drifted when rows
+    // were inserted above them (D32->D34, D46->D48, D50->D52, D56->D58,
+    // D59->D61, D62->D64, D99->D100). This is a one-time correction, not a
+    // structural fix — if the sheet's row layout changes again these could
+    // drift again. Everything else below reads I-cells directly or via
+    // Supabase's quantity_formula, both immune to this kind of drift.
     const cells = await sendMsg('READ_CELLS_BATCH', {
-      ranges: ['I13','D32','D46','D50','D56','D59','D62','D68','I9','I10','I11',
-               'I18','I19','I23','I24','I26','I20',
-               'D86','D88','D89','D90','D91','D92','D93','D94','D99']
+      ranges: ['I13','D34','D48','D52','D58','D61','D64','D100','I4','I5','I6',
+               'I9','I10','I11','I12','I18','I19','I20','I21','I22','I23','I24',
+               'I25','I26','I27','I28','I29']
     });
     const c = cells.data;
     const n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
@@ -1361,34 +1436,51 @@ async function writeToEstimate() {
     const items = [
       { name: 'Total Fixed Cost',                                                    qty: 1 },
       { name: 'Total Finished SF & Unfinished (Under Roof)',                         qty: n(c['I13']) },
-      { name: 'Total Finished SF',                                                   qty: n(c['D46']) },
-      { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',     qty: n(c['D32']) },
-      { name: 'Total Garage SF',                                                     qty: n(c['D62']) },
-      { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D56']) },
-      { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D50']) },
-      { name: 'Total Finished 1st Floor SF',                                        qty: n(c['D59']) },
+      { name: 'Total Finished SF',                                                   qty: n(c['D48']) },
+      { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',     qty: n(c['D34']) },
+      { name: 'Total Garage SF',                                                     qty: n(c['D64']) },
+      { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D58']) },
+      { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D52']) },
+      { name: 'Total Finished 1st Floor SF',                                        qty: n(c['D61']) },
       { name: 'Total for Decks & Porches',                                          qty: n(c['I9']) + n(c['I10']) + n(c['I11']) },
       { name: 'Interior Stairs',    qty: n(c['I23']) },
       { name: 'Exterior Doors',     qty: n(c['I18']) },
       { name: 'Windows',            qty: n(c['I19']) },
       { name: 'Porch Columns',      qty: n(c['I24']) },
       { name: 'Interior Doors',     qty: n(c['I26']) },
-      { name: 'Garage Door',        qty: n(c['D68']) },
-      { name: 'Number of Baths',    qty: n(c['I20']) }, // I20, not D93 — D93 is Plumbing Fixture Allowance
-      { name: 'Accessories Allowance',       qty: n(c['D86']) },
+      { name: 'Garage Door',        qty: 0 }, // resolved below via quantity_formula (=I25)
+      { name: 'Number of Baths',    qty: n(c['I20']) },
+      { name: 'Accessories Allowance',       qty: 0 }, // resolved below via quantity_formula
       { name: 'Appliance Allowance',         qty: 1 },
-      { name: 'Cabinet Allowance',           qty: n(c['D88']) },
-      { name: 'Carpet Allowance',            qty: n(c['D89']) },
-      { name: 'Countertop Allowance',        qty: n(c['D90']) },
-      { name: 'Hardwood Flooring Allowance', qty: n(c['D91']) },
-      { name: 'Lighting Fixture Allowance',  qty: n(c['D92']) },
-      { name: 'Plumbing Fixture Allowance',  qty: n(c['D93']) },
-      { name: 'Tile Allowance',              qty: n(c['D94']) },
+      { name: 'Cabinet Allowance',           qty: 0 },
+      { name: 'Carpet Allowance',            qty: 0 },
+      { name: 'Countertop Allowance',        qty: 0 },
+      { name: 'Hardwood Flooring Allowance', qty: 0 },
+      { name: 'Lighting Fixture Allowance',  qty: 0 },
+      { name: 'Plumbing Fixture Allowance',  qty: 0 },
+      { name: 'Tile Allowance',              qty: 0 },
       { name: 'Clearing Allowance',    qty: 1 },
       { name: 'Driveway Allowance',    qty: 1 },
-      { name: 'Landscaping Allowance', qty: n(c['D99']) },
+      { name: 'Landscaping Allowance', qty: 0 },
       { name: 'Tap Fees',              qty: 1 },
     ];
+
+    // Fill in the quantity_formula-driven items (allowances + Garage Door +
+    // Landscaping) from Supabase, evaluated against the I-cells already
+    // read above. A lookup miss or a fetch failure leaves that item's
+    // qty at the 0 placeholder set above rather than guessing — check the
+    // write log for a console warning if that happens.
+    try {
+      const qtyFormulas = await fetchQuantityFormulasFromSupabase(QUANTITY_FROM_FORMULA_ITEMS);
+      items.forEach(function(item) {
+        if (QUANTITY_FROM_FORMULA_ITEMS.indexOf(item.name) === -1) return;
+        const formula = qtyFormulas[item.name];
+        if (formula === undefined) { console.warn('[Keel] no quantity_formula match for', item.name); return; }
+        item.qty = evaluateQuantityFormula(formula, c);
+      });
+    } catch (e) {
+      console.warn('[Keel] quantity_formula lookup failed, allowance/garage-door quantities left at 0:', e.message);
+    }
     if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
 
     // Good/Better/Best allowance tiers — Group A (9 quantity-driven allowances).
