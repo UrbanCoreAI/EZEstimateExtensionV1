@@ -330,6 +330,28 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    // Global markup percent (Supabase markup_settings, singleton row,
+    // anon-readable) — fetched once per write, applied to every item
+    // below via trySetMarkupPercent(). A failed fetch leaves markupPercent
+    // undefined, which trySetMarkupPercent treats as "don't touch
+    // BuilderTrend's default markup" rather than writing a guess.
+    var markupPercent;
+    try {
+      var markupRes = await fetch('https://fujddlemswhbdqrhpekt.supabase.co/rest/v1/markup_settings?select=markup_percent&id=eq.1', {
+        headers: {
+          apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4'
+        }
+      });
+      if (markupRes.ok) {
+        var markupRows = await markupRes.json();
+        if (markupRows.length) markupPercent = markupRows[0].markup_percent;
+      }
+      if (markupPercent === undefined) _log.push('⚠ Could not read markup_settings from Supabase — BuilderTrend\'s default markup will be left in place on every item');
+      else _log.push('Markup percent from admin database: ' + markupPercent + '%');
+    } catch (markupErr) {
+      _log.push('⚠ markup_settings fetch failed (' + markupErr.message + ') — BuilderTrend\'s default markup will be left in place on every item');
+    }
+
     function writeReactValue(el, val) {
       if (!el) return;
       el.focus();
@@ -354,6 +376,38 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         document.execCommand('insertText', false, String(val));
       } catch (e) {}
       el.blur();
+    }
+
+    // Writes the global markup percent onto whichever item's edit form is
+    // currently open — called right before each write function's own save
+    // step, so it rides along with that same save rather than opening a
+    // separate panel. Confirmed selector from a real captured OuterHTML:
+    // input#markupValue / input[data-testid="Markup.markupPercent"] — this
+    // was captured from the existing-item edit panel (editExistingItem/
+    // setItemMarkupAndDescription's context), where fields use flat,
+    // non-namespaced ids like "description" and "unitCost" do. The
+    // new-item-creation forms (createLineItem/createSiteItem) namespace
+    // most fields per-row (e.g. "formatItems[4].items[0].unitCost") but
+    // description is flat there too, so this tries the same flat selector
+    // there as a reasonable bet — NOT verified for those two forms
+    // specifically. If it's not found, this logs a warning and leaves
+    // BuilderTrend's own default markup in place rather than failing the
+    // whole item.
+    async function trySetMarkupPercent(markupPercent, contextLabel) {
+      if (markupPercent === null || markupPercent === undefined || isNaN(parseFloat(markupPercent))) return false;
+      var markupInput = null;
+      for (var mi = 0; mi < 10; mi++) {
+        markupInput = document.querySelector('input[data-testid="Markup.markupPercent"], input#markupValue');
+        if (markupInput) break;
+        await _delay(150);
+      }
+      if (!markupInput) {
+        _log.push('⚠ ' + contextLabel + ': markup field not found — leaving BuilderTrend\'s default markup in place');
+        return false;
+      }
+      writeReactValue(markupInput, Math.round(parseFloat(markupPercent) * 100) / 100);
+      await _delay(200);
+      return true;
     }
 
     function findWorksheetSearchBar() {
@@ -535,7 +589,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       _log.push('✓ ' + name + ' → ' + qty + (isUnitCost ? ' (unit cost)' : ' (qty)') + ' (' + totalTime.toFixed(0) + 'ms)');
     }
 
-    async function createLineItem(title, unitCost, description) {
+    async function createLineItem(title, unitCost, description, markupPercent) {
       var ns = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       var nsArea = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
 
@@ -756,6 +810,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         _log.push('⚠ createLineItem: unit cost input not found — continuing');
       }
 
+      await trySetMarkupPercent(markupPercent, 'createLineItem');
+
       // ── Step 7: First save — click off to the left of the estimate to trigger
       // the dirty-tracking prompt ────────────────────────────────────────────
       var sideEl = document.querySelector('.ant-layout-sider, aside');
@@ -787,7 +843,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
     }
 
     // Like createLineItem but scrolls to "Site Allowances" and sets a per-item parent group
-    async function createSiteItem(title, parentGroup, unitCost) {
+    async function createSiteItem(title, parentGroup, unitCost, markupPercent) {
       var ns = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
       // Step 1: Search "Site Allowances" to scroll table to that group — mirrors createLineItem exactly
@@ -983,6 +1039,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         }
       }
 
+      await trySetMarkupPercent(markupPercent, 'createSiteItem');
+
       // Step 7: First save — click off to the sidebar to trigger the
       // dirty-tracking prompt
       var sideEl = document.querySelector('.ant-layout-sider, aside');
@@ -1020,7 +1078,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
     }
 
-    async function editExistingItem(searchName, newTitle, unitCost, description) {
+    async function editExistingItem(searchName, newTitle, unitCost, description, markupPercent) {
       var nsE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
       // Step 1: Search for item → click LineItemResult to open edit panel
@@ -1148,6 +1206,8 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         }
       }
 
+      await trySetMarkupPercent(markupPercent, 'editExistingItem: ' + searchName);
+
       // Step 4: First save — coordinate click to trigger dirty-tracking prompt
       var sideEl = document.querySelector('.ant-layout-sider, aside');
       var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
@@ -1186,8 +1246,14 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
     // after setQty() has already interacted with a different, smaller
     // popup on the same row — if descriptions don't land for Group A
     // items, that timing/interaction sequence is the first thing to check.
-    async function setItemDescription(searchName, description) {
-      if (!description) return;
+    // Opens an item's edit panel once and writes BOTH the global markup
+    // percent (always, when provided) and an optional tier-upgrade
+    // description in that same panel session — this used to be
+    // setItemDescription(), called only when a description existed;
+    // markup now applies to every item, so this always runs for the
+    // setQty-driven (Group A) branch of the main write loop below.
+    async function setItemMarkupAndDescription(searchName, markupPercent, description) {
+      if (!description && (markupPercent === null || markupPercent === undefined)) return;
       var nsD = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
 
       // Step 1: Search for item → click LineItemResult to open edit panel
@@ -1233,7 +1299,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         if (targetRowD) break;
         await _delay(150);
       }
-      if (!targetRowD) { _log.push('⚠ setItemDescription: row not found for ' + searchName); return; }
+      if (!targetRowD) { _log.push('⚠ setItemMarkupAndDescription: row not found for ' + searchName); return; }
       targetRowD.click();
       await _delay(800);
 
@@ -1254,22 +1320,31 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         titleDisplayD.click();
         await _delay(400);
       } else {
-        _log.push('⚠ setItemDescription: title ValueDisplay not found for ' + searchName);
+        _log.push('⚠ setItemMarkupAndDescription: title ValueDisplay not found for ' + searchName);
       }
 
-      // Step 4: Find + write the description textarea (no title/cost edits here)
-      var descAreaD = null;
-      for (var daD = 0; daD < 30; daD++) {
-        descAreaD = document.getElementById('description')
-                 || document.querySelector('textarea[data-testid="description"]')
-                 || document.querySelector('textarea[name="description"]');
-        if (descAreaD) break;
-        await _delay(150);
+      // Step 4: Find + write the description textarea, if one was given
+      // (no title/cost edits here). A missing textarea doesn't abort the
+      // whole item — markup below still gets a chance to write.
+      if (description) {
+        var descAreaD = null;
+        for (var daD = 0; daD < 30; daD++) {
+          descAreaD = document.getElementById('description')
+                   || document.querySelector('textarea[data-testid="description"]')
+                   || document.querySelector('textarea[name="description"]');
+          if (descAreaD) break;
+          await _delay(150);
+        }
+        if (descAreaD) {
+          descAreaD.scrollIntoView({ behavior: 'instant', block: 'center' });
+          writeReactValue(descAreaD, description);
+          await _delay(250);
+        } else {
+          _log.push('⚠ setItemMarkupAndDescription: description textarea not found for ' + searchName);
+        }
       }
-      if (!descAreaD) { _log.push('⚠ setItemDescription: description textarea not found for ' + searchName); return; }
-      descAreaD.scrollIntoView({ behavior: 'instant', block: 'center' });
-      writeReactValue(descAreaD, description);
-      await _delay(250);
+
+      await trySetMarkupPercent(markupPercent, 'setItemMarkupAndDescription: ' + searchName);
 
       // Step 5: Save — same coordinate-click + dirty-tracking-popup pattern as editExistingItem
       var sideElD = document.querySelector('.ant-layout-sider, aside');
@@ -1292,7 +1367,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await _delay(800);
       }
 
-      _log.push('✓ setItemDescription: ' + searchName + ' → "' + description + '"');
+      _log.push('✓ setItemMarkupAndDescription: ' + searchName + (markupPercent !== null && markupPercent !== undefined ? ' → markup ' + markupPercent + '%' : '') + (description ? ' → "' + description + '"' : ''));
     }
 
     // Like editExistingItem, but scoped to a specific group's rows only —
@@ -1301,7 +1376,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
     // silently edit the wrong group's row. Reveal the target group, then
     // only walk ITS sibling rows for the placeholder (same scoping pattern
     // as groupHasRealItems / the Step 0.5 estimate check).
-    async function editGroupPlaceHolder(groupTitle, newTitle, unitCost, description) {
+    async function editGroupPlaceHolder(groupTitle, newTitle, unitCost, description, markupPercent) {
       var nsG = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
       var nsAreaG = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
 
@@ -1419,6 +1494,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           await _delay(300);
         } else { _log.push('⚠ editGroupPlaceHolder: cost input did not appear for Place Holder in "' + groupTitle + '"'); }
       } else { _log.push('⚠ editGroupPlaceHolder: cost cell not found for Place Holder in "' + groupTitle + '"'); }
+      await trySetMarkupPercent(markupPercent, 'editGroupPlaceHolder: ' + groupTitle);
       var sideElG = document.querySelector('.ant-layout-sider, aside');
       var saveXG = sideElG ? sideElG.getBoundingClientRect().right + 5 : 10;
       var saveYG = window.innerHeight / 2;
@@ -1444,9 +1520,9 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           // item alongside it — rename/reprice it in place, same as the
           // Driveway/Landscaping Allowance edits below. Group-scoped (not
           // editExistingItem) since "Place Holder" isn't unique page-wide.
-          await editGroupPlaceHolder('Custom Selection Allowances', customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description);
+          await editGroupPlaceHolder('Custom Selection Allowances', customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description, markupPercent);
         } else {
-          await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description);
+          await createLineItem(customItemsList[ci].name, customItemsList[ci].unitCost, customItemsList[ci].description, markupPercent);
         }
       }
     }
@@ -1455,12 +1531,13 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
       var editOpt = editableItems[itemsList[i].name];
       if (editOpt) {
-        await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost, editOpt.description);
+        await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost, editOpt.description, markupPercent);
       } else {
         await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
-        if (itemsList[i].description) {
-          await setItemDescription(itemsList[i].name, itemsList[i].description);
-        }
+        // Markup applies to every item now (not just ones with a tier
+        // description) — always call this, it no-ops internally on
+        // whichever of the two is actually absent.
+        await setItemMarkupAndDescription(itemsList[i].name, markupPercent, itemsList[i].description);
         // Supabase-sourced unit cost — only set when the caller actually
         // resolved one (no match in cost_items => undefined => skipped,
         // leaving BuilderTrend's own preset rate untouched rather than
@@ -1485,7 +1562,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         for (var si2 = 0; si2 < siteOptionsList.length; si2++) {
           if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
           if (siteOptionsList[si2].existingLine) continue;
-          await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost);
+          await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost, markupPercent);
         }
       }
     }
@@ -1504,6 +1581,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (totalVal > 0) {
         _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
         await setQty('Realtor Fees', totalVal, true);
+        await setItemMarkupAndDescription('Realtor Fees', markupPercent, undefined);
       } else {
         _log.push('⚠ Could not detect estimate total for Realtor Fees');
       }
