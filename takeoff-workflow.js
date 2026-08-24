@@ -1831,31 +1831,32 @@
         });
         if (customRowError) throw new Error(customRowError);
 
-        // Read sheet cells (same as writeToEstimate in popup.js). Subtotal-
-        // only labels' D-cell refs re-verified against the LIVE sheet on
-        // 2026-08-21 after several drifted when rows were inserted above
-        // them (D32->D34, D46->D48, D50->D52, D56->D58, D59->D61, D62->D64,
-        // D99->D100) — these have no cost_items row, so there's no formula-
-        // based fix available for them.
+        // Read sheet cells (same as writeToEstimate in popup.js). Only
+        // I-cells needed now — the 6 "TOTAL FOR..." subtotal rows turned
+        // out to never carry a quantity at all (only their own $0.00
+        // Amount column is populated; verified live), so hardcoding a
+        // corrected D-cell for them just produced 0 again. All of those,
+        // plus the 9 allowances/Garage Door/Landscaping, now come from
+        // Supabase's quantity_formula instead — see QUANTITY_FROM_FORMULA_ITEMS
+        // in popup.js for the full list and how each subtotal label maps
+        // to a real item whose formula represents that group's shared SF.
         var lender = document.getElementById('tk-chk-lender') && document.getElementById('tk-chk-lender').checked;
         var cells = await sendMsg('READ_CELLS_BATCH', {
-          ranges: ['I13','D34','D48','D52','D58','D61','D64','D100','I9','I10','I11',
-                   'I18','I19','I23','I24','I26','I20']
+          ranges: ['I13','I4','I5','I6','I9','I10','I11','I12','I18','I19','I20',
+                   'I21','I22','I23','I24','I25','I26','I27','I28','I29']
         });
         var c = cells.data;
         var n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
 
         // If a base plan was used, compute the I-ref-driven quantities
-        // (allowances, doors, decks & porches, baths) directly from the
-        // values already read from that house's own tab, instead of
-        // re-reading Custom Plan — this is what actually fixes those
-        // numbers coming out wrong/zero for base plans: it no longer
-        // depends on the write-back to Custom Plan having landed and
-        // recalculated by the time this runs, and isn't affected by a
-        // blank cell on that house's tab leaving Custom Plan's previous
-        // (different job's) value sitting there unnoticed. The subtotal-
-        // only D-cells above still come from Custom Plan either way —
-        // there's no other source for those.
+        // (allowances, doors, decks & porches, baths, and now the subtotal
+        // proxies too) directly from the values already read from that
+        // house's own tab, instead of re-reading Custom Plan — this is
+        // what actually fixes those numbers coming out wrong/zero for base
+        // plans: it no longer depends on the write-back to Custom Plan
+        // having landed and recalculated by the time this runs, and isn't
+        // affected by a blank cell on that house's tab leaving Custom
+        // Plan's previous (different job's) value sitting there unnoticed.
         var AREA_COUNT_KEY_TO_I_REF = {
           'basement': 'I3', '1st floor': 'I4', '2nd floor': 'I5', '3rd floor': 'I6',
           'attic with storage': 'I7', 'habitable attic': 'I8', 'front porch': 'I9',
@@ -1881,12 +1882,12 @@
         var items = [
           { name: 'Total Fixed Cost',                                                    qty: 1 },
           { name: 'Total Finished SF & Unfinished (Under Roof)',                         qty: n(c['I13']) },
-          { name: 'Total Finished SF',                                                   qty: n(c['D48']) },
-          { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',    qty: n(c['D34']) },
-          { name: 'Total Garage SF',                                                     qty: n(c['D64']) },
-          { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D58']) },
-          { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D52']) },
-          { name: 'Total Finished 1st Floor SF',                                         qty: n(c['D61']) },
+          { name: 'Total Finished SF',                                                   qty: 0 }, // resolved below via quantity_formula
+          { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',    qty: 0 },
+          { name: 'Total Garage SF',                                                     qty: 0 },
+          { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: 0 },
+          { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: 0 },
+          { name: 'Total Finished 1st Floor SF',                                         qty: 0 },
           { name: 'Total for Decks & Porches',                                           qty: n(iRefValues['I9']) + n(iRefValues['I10']) + n(iRefValues['I11']) },
           { name: 'Interior Stairs',    qty: n(iRefValues['I23']) },
           { name: 'Exterior Doors',     qty: n(iRefValues['I18']) },
