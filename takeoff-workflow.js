@@ -278,6 +278,7 @@
     seqStep:              0,     // current position in final 3-step sequence (0=Grab&Write, 1=WriteToEstimate, 2=ClientPreview, 3=done)
     seqMaxStep:           -1,    // highest step reached; -1 = sequence not started yet
     selectedBasePlanHouse: null, // houses.key (e.g. 'kiawah') if "Start From a Base Plan" was used, else null — read by wireDynamicEstimateButton() to use that house's own unit costs instead of the average
+    selectedBasePlanValues: null, // the {areaKeys/countKeys: value} object read from that house's own tab — used to compute quantities directly instead of re-reading Custom Plan
   };
 
   // Returns a promise that resolves with 'skip' when the user presses Skip during automation
@@ -477,6 +478,7 @@
   async function runWorkflow() {
     wf.active = true;
     wf.selectedBasePlanHouse = null; // this is the guided/manual path, not a base plan
+    wf.selectedBasePlanValues = null;
     document.getElementById('tk-idle').classList.add('hidden');
     document.getElementById('tk-active').classList.remove('hidden');
     document.getElementById('tk-complete').classList.add('hidden');
@@ -1829,47 +1831,101 @@
         });
         if (customRowError) throw new Error(customRowError);
 
-        // Read sheet cells (same as writeToEstimate in popup.js)
+        // Read sheet cells (same as writeToEstimate in popup.js). Subtotal-
+        // only labels' D-cell refs re-verified against the LIVE sheet on
+        // 2026-08-21 after several drifted when rows were inserted above
+        // them (D32->D34, D46->D48, D50->D52, D56->D58, D59->D61, D62->D64,
+        // D99->D100) — these have no cost_items row, so there's no formula-
+        // based fix available for them.
         var lender = document.getElementById('tk-chk-lender') && document.getElementById('tk-chk-lender').checked;
         var cells = await sendMsg('READ_CELLS_BATCH', {
-          ranges: ['I13','D32','D46','D50','D56','D59','D62','D68','I9','I10','I11',
-                   'I18','I19','I23','I24','I26','I20',
-                   'D86','D88','D89','D90','D91','D92','D93','D94','D99']
+          ranges: ['I13','D34','D48','D52','D58','D61','D64','D100','I9','I10','I11',
+                   'I18','I19','I23','I24','I26','I20']
         });
         var c = cells.data;
         var n = function(v) { return parseFloat(String(v || '0').replace(/[^0-9.-]/g, '')) || 0; };
 
+        // If a base plan was used, compute the I-ref-driven quantities
+        // (allowances, doors, decks & porches, baths) directly from the
+        // values already read from that house's own tab, instead of
+        // re-reading Custom Plan — this is what actually fixes those
+        // numbers coming out wrong/zero for base plans: it no longer
+        // depends on the write-back to Custom Plan having landed and
+        // recalculated by the time this runs, and isn't affected by a
+        // blank cell on that house's tab leaving Custom Plan's previous
+        // (different job's) value sitting there unnoticed. The subtotal-
+        // only D-cells above still come from Custom Plan either way —
+        // there's no other source for those.
+        var AREA_COUNT_KEY_TO_I_REF = {
+          'basement': 'I3', '1st floor': 'I4', '2nd floor': 'I5', '3rd floor': 'I6',
+          'attic with storage': 'I7', 'habitable attic': 'I8', 'front porch': 'I9',
+          'rear porch': 'I10', 'rear deck': 'I11', 'garage': 'I12',
+          '# of exterior doors': 'I18', '# of windows': 'I19', '# of baths': 'I20',
+          'cabinets lf': 'I21', 'countertops lf': 'I22', '# of staircases': 'I23',
+          '# of front porch columns': 'I24', '# of garage doors': 'I25',
+          '# of interior doors': 'I26', 'sf of carpet': 'I27', 'sf of hardwood': 'I28',
+          'sf of tile': 'I29'
+        };
+        var iRefValues = c; // default: whatever was just read from Custom Plan
+        if (wf.selectedBasePlanHouse && wf.selectedBasePlanValues) {
+          iRefValues = {};
+          Object.keys(wf.selectedBasePlanValues).forEach(function(key) {
+            var iRef = AREA_COUNT_KEY_TO_I_REF[key];
+            if (iRef) iRefValues[iRef] = wf.selectedBasePlanValues[key];
+          });
+          // Still need I9/I10/I11 (decks & porches) and I18/I19/I20/I23/I24/I26
+          // (doors/windows/baths/stairs/columns) for the non-formula items
+          // below — all covered by the same translated object.
+        }
+
         var items = [
           { name: 'Total Fixed Cost',                                                    qty: 1 },
           { name: 'Total Finished SF & Unfinished (Under Roof)',                         qty: n(c['I13']) },
-          { name: 'Total Finished SF',                                                   qty: n(c['D46']) },
-          { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',    qty: n(c['D32']) },
-          { name: 'Total Garage SF',                                                     qty: n(c['D62']) },
-          { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D56']) },
-          { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D50']) },
-          { name: 'Total Finished 1st Floor SF',                                         qty: n(c['D59']) },
-          { name: 'Total for Decks & Porches',                                           qty: n(c['I9']) + n(c['I10']) + n(c['I11']) },
-          { name: 'Interior Stairs',    qty: n(c['I23']) },
-          { name: 'Exterior Doors',     qty: n(c['I18']) },
-          { name: 'Windows',            qty: n(c['I19']) },
-          { name: 'Porch Columns',      qty: n(c['I24']) },
-          { name: 'Interior Doors',     qty: n(c['I26']) },
-          { name: 'Garage Door',        qty: n(c['D68']) },
-          { name: 'Number of Baths',    qty: n(c['I20']) }, // I20, not D93 — D93 is Plumbing Fixture Allowance
-          { name: 'Accessories Allowance',       qty: n(c['D86']) },
+          { name: 'Total Finished SF',                                                   qty: n(c['D48']) },
+          { name: 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',    qty: n(c['D34']) },
+          { name: 'Total Garage SF',                                                     qty: n(c['D64']) },
+          { name: 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',            qty: n(c['D58']) },
+          { name: 'Total 1st Floor, Garage & Porch SF',                                 qty: n(c['D52']) },
+          { name: 'Total Finished 1st Floor SF',                                         qty: n(c['D61']) },
+          { name: 'Total for Decks & Porches',                                           qty: n(iRefValues['I9']) + n(iRefValues['I10']) + n(iRefValues['I11']) },
+          { name: 'Interior Stairs',    qty: n(iRefValues['I23']) },
+          { name: 'Exterior Doors',     qty: n(iRefValues['I18']) },
+          { name: 'Windows',            qty: n(iRefValues['I19']) },
+          { name: 'Porch Columns',      qty: n(iRefValues['I24']) },
+          { name: 'Interior Doors',     qty: n(iRefValues['I26']) },
+          { name: 'Garage Door',        qty: 0 }, // resolved below via quantity_formula (=I25)
+          { name: 'Number of Baths',    qty: n(iRefValues['I20']) },
+          { name: 'Accessories Allowance',       qty: 0 }, // resolved below via quantity_formula
           { name: 'Appliance Allowance',         qty: 1 },
-          { name: 'Cabinet Allowance',           qty: n(c['D88']) },
-          { name: 'Carpet Allowance',            qty: n(c['D89']) },
-          { name: 'Countertop Allowance',        qty: n(c['D90']) },
-          { name: 'Hardwood Flooring Allowance', qty: n(c['D91']) },
-          { name: 'Lighting Fixture Allowance',  qty: n(c['D92']) },
-          { name: 'Plumbing Fixture Allowance',  qty: n(c['D93']) },
-          { name: 'Tile Allowance',              qty: n(c['D94']) },
+          { name: 'Cabinet Allowance',           qty: 0 },
+          { name: 'Carpet Allowance',            qty: 0 },
+          { name: 'Countertop Allowance',        qty: 0 },
+          { name: 'Hardwood Flooring Allowance', qty: 0 },
+          { name: 'Lighting Fixture Allowance',  qty: 0 },
+          { name: 'Plumbing Fixture Allowance',  qty: 0 },
+          { name: 'Tile Allowance',              qty: 0 },
           { name: 'Clearing Allowance',    qty: 1 },
           { name: 'Driveway Allowance',    qty: 1 },
-          { name: 'Landscaping Allowance', qty: n(c['D99']) },
+          { name: 'Landscaping Allowance', qty: 0 },
           { name: 'Tap Fees',              qty: 1 },
         ];
+
+        // Fill in the quantity_formula-driven items from Supabase, evaluated
+        // against iRefValues (the base plan's own numbers when one was
+        // used, otherwise Custom Plan's I-cells) — see popup.js's
+        // fetchQuantityFormulasFromSupabase/evaluateQuantityFormula/
+        // QUANTITY_FROM_FORMULA_ITEMS for the shared implementation.
+        try {
+          var tkQtyFormulas = await fetchQuantityFormulasFromSupabase(QUANTITY_FROM_FORMULA_ITEMS);
+          items.forEach(function(item) {
+            if (QUANTITY_FROM_FORMULA_ITEMS.indexOf(item.name) === -1) return;
+            var formula = tkQtyFormulas[item.name];
+            if (formula === undefined) { console.warn('[Keel] no quantity_formula match for', item.name); return; }
+            item.qty = evaluateQuantityFormula(formula, iRefValues);
+          });
+        } catch (e) {
+          console.warn('[Keel] quantity_formula lookup failed, allowance/garage-door quantities left at 0:', e.message);
+        }
         if (lender) items.push({ name: 'Preferred Lender Incentive', qty: 1 });
 
         // Good/Better/Best allowance tiers — Group A (9 quantity-driven
@@ -2102,6 +2158,16 @@
           });
 
           if (!Object.keys(values).length) throw new Error('No values found for "' + key + '" — check the ' + tabName + ' tab.');
+
+          // Cached so wireDynamicEstimateButton() can compute allowance/door
+          // quantities directly from these already-read numbers instead of
+          // re-reading Custom Plan's I-cells afterward — avoids depending on
+          // the Sheet write below having actually landed and recalculated
+          // by the time the user gets to Write to Estimate (which was a real
+          // gap: a base plan whose own tab had a blank/zero cell for some
+          // area wouldn't overwrite Custom Plan's leftover value from a
+          // previous job, silently producing a stale or wrong quantity).
+          wf.selectedBasePlanValues = values;
 
           baseplanGoBtn.textContent = 'Writing to sheet…';
           await writeValues(values);
