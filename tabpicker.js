@@ -1615,7 +1615,10 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (totalVal > 0) {
         _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
         await setQty('Realtor Fees', totalVal, true);
-        await setItemMarkupAndDescription('Realtor Fees', markupPercent, undefined);
+        // Realtor Fees is itself computed off the grand total (which already
+        // includes markup on every other line) — marking it up again would
+        // double-count, so it always gets 0% regardless of markupPercent.
+        await setItemMarkupAndDescription('Realtor Fees', 0, undefined);
       } else {
         _log.push('⚠ Could not detect estimate total for Realtor Fees');
       }
