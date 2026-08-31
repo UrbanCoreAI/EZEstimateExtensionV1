@@ -2145,28 +2145,41 @@
         if (statusEl) statusEl.textContent = '';
 
         try {
-          // Same tab-name convention and cell ranges as the EZEstimate
-          // webpage's base-plan loader — mirrors CELL_MAP in background.js.
-          var tabName = '2026 MASTER PLAN ' + key;
+          // Used to guess a live Sheet tab name ('2026 MASTER PLAN ' + KEY)
+          // and read I3:I12/I18:I29 straight off it — that guess breaks the
+          // moment a tab is renamed, the year rolls over, or capitalization
+          // doesn't match, which is exactly what "Unable to parse range"
+          // meant (Google's way of saying that tab name doesn't exist).
+          // The admin page solved this same problem for its own house-tab
+          // display by reading reference_house_measurements keyed by house
+          // instead of a guessed tab name (kept in sync by Import from
+          // Sheet) — same fix here, and it also means this no longer
+          // depends on the Sheet at all.
           var areaKeys = ['basement', '1st floor', '2nd floor', '3rd floor', 'attic with storage', 'habitable attic', 'front porch', 'rear porch', 'rear deck', 'garage'];
           var countKeys = ['# of exterior doors', '# of windows', '# of baths', 'cabinets lf', 'countertops lf', '# of staircases', '# of front porch columns', '# of garage doors', '# of interior doors', 'sf of carpet', 'sf of hardwood', 'sf of tile'];
+          var AREA_FIELDS = ['basement_sf', 'floor1_sf', 'floor2_sf', 'floor3_sf', 'attic_storage_sf', 'habitable_attic_sf', 'front_porch_sf', 'rear_porch_sf', 'rear_deck_sf', 'garage_sf'];
+          var QTY_FIELDS = ['exterior_doors', 'windows', 'baths', 'cabinets_lf', 'countertop_lf', 'staircases', 'porch_columns', 'garage_doors', 'interior_doors', 'carpet_sf', 'hardwood_sf', 'tile_sf'];
 
-          var areaResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: tabName, range: 'I3:I12' });
-          var countResp = await sendMsg('READ_CELLS_RANGE_TAB', { tab: tabName, range: 'I18:I29' });
+          var refRes = await fetch('https://fujddlemswhbdqrhpekt.supabase.co/rest/v1/reference_house_measurements?house=eq.' + encodeURIComponent(wf.selectedBasePlanHouse) + '&select=*', {
+            headers: { apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4' },
+            cache: 'no-store'
+          });
+          if (!refRes.ok) throw new Error('Supabase reference_house_measurements read failed: HTTP ' + refRes.status);
+          var refRows = await refRes.json();
+          var ref = (refRows && refRows[0]) || null;
+          if (!ref) throw new Error('No saved measurements found for "' + key + '" in the database — run Import from Sheet on the admin page for this base plan first.');
 
           var values = {};
-          (areaResp.data || []).forEach(function (row, i) {
-            if (i >= areaKeys.length) return;
-            var v = parseFloat(String((row && row[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+          AREA_FIELDS.forEach(function (field, i) {
+            var v = Number(ref[field]) || 0;
             if (v > 0) values[areaKeys[i]] = v;
           });
-          (countResp.data || []).forEach(function (row, i) {
-            if (i >= countKeys.length) return;
-            var v = parseFloat(String((row && row[0]) || '0').replace(/[^0-9.-]/g, '')) || 0;
+          QTY_FIELDS.forEach(function (field, i) {
+            var v = Number(ref[field]) || 0;
             if (v > 0) values[countKeys[i]] = v;
           });
 
-          if (!Object.keys(values).length) throw new Error('No values found for "' + key + '" — check the ' + tabName + ' tab.');
+          if (!Object.keys(values).length) throw new Error('No values found for "' + key + '" — check reference_house_measurements for this house in Supabase.');
 
           // Cached so wireDynamicEstimateButton() can compute allowance/door
           // quantities directly from these already-read numbers instead of
