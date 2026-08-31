@@ -563,14 +563,14 @@
 
     btn.disabled = true;
     btn.textContent = 'Writing…';
-    showStatus('Writing to Google Sheet…', 'info', true);
+    showStatus('Writing to database…', 'info', true);
 
     try {
       var res = await sendMsg('WRITE_VALUES', { values: values });
-      showStatus('✓ Written ' + res.written + ' value(s) to sheet successfully.', 'success');
+      showStatus('✓ Written ' + res.written + ' value(s) to database successfully.', 'success');
       document.getElementById('prereq-section').classList.add('visible');
     } catch(e) {
-      showStatus('Error writing to sheet: ' + e.message, 'error');
+      showStatus('Error writing to database: ' + e.message, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Go →';

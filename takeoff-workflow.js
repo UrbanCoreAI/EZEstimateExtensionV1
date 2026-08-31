@@ -2191,7 +2191,7 @@
           // previous job, silently producing a stale or wrong quantity).
           wf.selectedBasePlanValues = values;
 
-          baseplanGoBtn.textContent = 'Writing to sheet…';
+          baseplanGoBtn.textContent = 'Writing to database…';
           await writeValues(values);
 
           // Same estimate step (site options / calculator / custom allowances /

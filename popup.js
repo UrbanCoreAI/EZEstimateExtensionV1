@@ -1371,10 +1371,10 @@ async function writeAiToSheet() {
     const count = lastAiResult[key] && lastAiResult[key].count;
     if (count !== undefined && count !== null) values[AI_KEY_MAP[key]] = count;
   }
-  showStatus('Writing AI counts to sheet…', 'info', 0);
+  showStatus('Writing AI counts to database…', 'info', 0);
   try {
     const res = await sendMsg('WRITE_VALUES', { values: values });
-    showStatus('✓ Wrote ' + res.written + ' values to sheet', 'success');
+    showStatus('✓ Wrote ' + res.written + ' values to database', 'success');
     setTimeout(function() { loadSheetTab(activeTab); }, 1200);
   } catch (e) {
     showStatus('Write error: ' + e.message, 'error', 6000);
@@ -2972,10 +2972,10 @@ async function startM1ClientPreview() {
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
 async function writeValues(values) {
-  showStatus('Writing to Google Sheets…', 'info', 0);
+  showStatus('Writing to database…', 'info', 0);
   try {
     const res = await sendMsg('WRITE_VALUES', { values: values });
-    showStatus('✓ Wrote ' + res.written + ' value(s) to sheet', 'success');
+    showStatus('✓ Wrote ' + res.written + ' value(s) to database', 'success');
     setTimeout(function() { loadSheetTab(activeTab); }, 1000);
   } catch (e) {
     showStatus('Error: ' + e.message, 'error', 6000);
