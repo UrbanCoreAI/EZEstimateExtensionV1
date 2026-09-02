@@ -1024,61 +1024,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         _log.push('⚠ createSiteItem: cost code input not found (keyBase=' + keyBase + ')');
       }
 
-      // Step 5.5: Parent group — wait for it to appear after cost code is set, then type & pick.
-      // 20x200ms (4s) wasn't always enough — a real write timed out here and
-      // the new site item silently fell back to BuilderTrend's own default
-      // parent group ("Base House Pricing") instead of the intended one,
-      // with no further recovery attempted below once that happens. 50x200ms
-      // (10s) gives real headroom against the same kind of UI lag other
-      // fields in this file already take 3-4+ seconds to settle from.
-      var pgInput = null;
-      for (var pgwait=0; pgwait<50; pgwait++) {
-        pgInput = document.getElementById('parentId');
-        if (pgInput) break;
-        await _delay(200);
-      }
-      if (pgInput) {
-        var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
-        // "parentGroup" here is actually a COST CODE string (e.g.
-        // "11 - Septic/Sewer"), not a real parent-group category name like
-        // "Site Allowances" — see SITE_DROPDOWN_MAP on the webpage. Selecting
-        // that cost code in Step 5 already auto-fills this field with the
-        // CORRECT category on its own. Searching this dropdown for the same
-        // cost-code text below would never match a category name, and would
-        // first clear out that already-correct value before failing to find
-        // a replacement — leaving it blank and falling back to
-        // BuilderTrend's own default group. Only touch it if it's genuinely
-        // still empty; never clear/retype over an existing selection.
-        var pgAlreadySet = pgWrap && pgWrap.querySelector('.ant-select-selection-item');
-        if (pgAlreadySet && (pgAlreadySet.textContent || '').trim()) {
-          _log.push('✓ createSiteItem: parent group already set to "' + pgAlreadySet.textContent.trim() + '" via cost code — leaving as-is');
-        } else {
-        if (pgWrap) { pgWrap.click(); await _delay(400); }
-        pgInput.focus(); await _delay(200);
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        await _delay(100);
-        document.execCommand('insertText', false, parentGroup);
-        await _delay(1000);
-        var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
-        var pgOpt = null;
-        for (var po=0; po<pgOpts.length; po++) {
-          if ((pgOpts[po].textContent||'').trim() === parentGroup) { pgOpt = pgOpts[po]; break; }
-        }
-        if (pgOpt) {
-          var pgOptParent = pgOpt.closest('.ant-select-item-option') || pgOpt.parentElement;
-          pgOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
-          await _delay(80);
-          pgOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-          pgOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-          await _delay(500);
-          _log.push('✓ createSiteItem: parent group set to ' + parentGroup);
-        } else { _log.push('⚠ createSiteItem: parent group "' + parentGroup + '" not found — continuing'); }
-        }
-      } else {
-        _log.push('⚠ createSiteItem: parentId input not found after waiting');
-      }
-
       // Step 6: Unit cost — pulled from SITE OPTIONS sheet column C
       if (unitCost && parseFloat(unitCost) > 0) {
         var ucInput = document.querySelector('[data-testid="' + keyBase + '.unitCost"]')
@@ -1100,6 +1045,55 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
 
       await trySetMarkupPercent(markupPercent, 'createSiteItem');
+
+      // Step 6.5: Parent group — tried right after cost code before, but the
+      // parentId field never appeared even after a 10s wait, every time.
+      // Trying again now, after cost code AND unit cost AND markup are all
+      // filled in, in case the field only renders once more of the form is
+      // complete — same still-open creation panel, nothing reopened.
+      var pgInput = null;
+      for (var pgwait=0; pgwait<50; pgwait++) {
+        pgInput = document.getElementById('parentId');
+        if (pgInput) break;
+        await _delay(200);
+      }
+      if (pgInput) {
+        var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
+        // "parentGroup" here is actually a COST CODE string (e.g.
+        // "11 - Septic / Sewer"), not a real parent-group category name like
+        // "Site Allowances" — see SITE_DROPDOWN_MAP on the webpage. Selecting
+        // that cost code in Step 5 may already auto-fill this field with the
+        // correct category on its own. Only touch it if it's genuinely
+        // still empty; never clear/retype over an existing selection.
+        var pgAlreadySet = pgWrap && pgWrap.querySelector('.ant-select-selection-item');
+        if (pgAlreadySet && (pgAlreadySet.textContent || '').trim()) {
+          _log.push('✓ createSiteItem: parent group already set to "' + pgAlreadySet.textContent.trim() + '" via cost code — leaving as-is');
+        } else {
+          pgWrap && pgWrap.click(); await _delay(400);
+          pgInput.focus(); await _delay(200);
+          document.execCommand('selectAll', false, null);
+          document.execCommand('delete', false, null);
+          await _delay(100);
+          document.execCommand('insertText', false, 'Site Allowances');
+          await _delay(1000);
+          var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
+          var pgOpt = null;
+          for (var po=0; po<pgOpts.length; po++) {
+            if ((pgOpts[po].textContent||'').trim() === 'Site Allowances') { pgOpt = pgOpts[po]; break; }
+          }
+          if (pgOpt) {
+            var pgOptParent = pgOpt.closest('.ant-select-item-option') || pgOpt.parentElement;
+            pgOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
+            await _delay(80);
+            pgOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
+            pgOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+            await _delay(500);
+            _log.push('✓ createSiteItem: parent group set to "Site Allowances"');
+          } else { _log.push('⚠ createSiteItem: parent group "Site Allowances" option not found — continuing'); }
+        }
+      } else {
+        _log.push('⚠ createSiteItem: parentId input still not found after cost code + unit cost + markup — continuing');
+      }
 
       // Step 7: First save — click off to the sidebar to trigger the
       // dirty-tracking prompt
@@ -1291,148 +1285,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
-    }
-
-    // Fixes a just-created site item's parent group after the fact.
-    // createSiteItem's own parentId field never reliably appears during the
-    // CREATE flow itself (confirmed live: even a 10s wait times out) — but
-    // once the item exists as a normal saved row, its edit panel opens the
-    // same reliable way editExistingItem's does above, and the field is
-    // actually present there. Reuses that same search → open-row pattern,
-    // then does the parent-group select + save.
-    async function fixSiteItemParentGroup(searchName, targetParentGroup) {
-      // Step 1: Search for item → click LineItemResult to open edit panel
-      // (identical to editExistingItem's Step 1 — same search-select control)
-      var siF = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-      if (!siF) {
-        var candsF = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-        siF = candsF.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-      }
-      if (siF) {
-        var contF = siF.closest('.ant-select-selector') || siF.parentElement;
-        if (contF) { contF.click(); await _delay(200); }
-        siF.focus(); await _delay(100);
-        var nsF = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        nsF.call(siF, searchName);
-        siF.dispatchEvent(new Event('input',{bubbles:true}));
-        siF.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(900);
-        var fResult = null;
-        var fItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-        for (var fli=0; fli<fItems.length; fli++) {
-          if ((fItems[fli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { fResult = fItems[fli]; break; }
-        }
-        if (fResult) {
-          fResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          fResult.click();
-          await _delay(1000);
-        }
-        nsF.call(siF, '');
-        siF.dispatchEvent(new Event('input',{bubbles:true}));
-        siF.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(400);
-      }
-
-      // Step 2: Find the row in the table and click it to open its edit panel
-      var targetRowF = null;
-      for (var tdf=0; tdf<20; tdf++) {
-        var bTagsF = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
-        for (var tdf2=0; tdf2<bTagsF.length; tdf2++) {
-          if ((bTagsF[tdf2].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-            targetRowF = bTagsF[tdf2].closest('tr.proposalBaseLineItemContainerRow');
-            break;
-          }
-        }
-        if (targetRowF) break;
-        await _delay(150);
-      }
-      if (!targetRowF) { _log.push('⚠ fixSiteItemParentGroup: row not found for ' + searchName); return; }
-      targetRowF.click();
-      await _delay(800);
-
-      // DIAGNOSTIC: confirm the right panel actually opened for this item
-      // before we even look for the parent-group field — if the title
-      // shown doesn't match searchName, everything below is looking at the
-      // wrong panel entirely, which would explain a false "not found".
-      var openedTitleEls = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"], input[data-testid="itemTitle"]');
-      var openedTitles = Array.from(openedTitleEls).map(function(el){ return (el.textContent||el.value||'').trim(); });
-      _log.push('🔍 DIAGNOSTIC: after clicking row for "' + searchName + '", panel title field(s) show: [' + openedTitles.join(' | ') + ']');
-
-      // Step 3: Find the parent-group Ant Select in the now-open edit panel
-      var pgInputF = null;
-      for (var pgf=0; pgf<25; pgf++) {
-        pgInputF = document.getElementById('parentId');
-        if (pgInputF) break;
-        await _delay(200);
-      }
-      if (!pgInputF) {
-        // DIAGNOSTIC: id="parentId" isn't there — but we know from a real
-        // screenshot that a span reading "Base House Pricing" IS on the
-        // page right now. Find that exact span and log its real container's
-        // id/class/outerHTML so we know what selector actually works,
-        // instead of guessing again.
-        var bhpSpans = Array.from(document.querySelectorAll('.ant-select-selection-item')).filter(function(el) {
-          return /base house pricing/i.test(el.textContent || '') || /base house pricing/i.test(el.getAttribute('title') || '');
-        });
-        if (bhpSpans.length) {
-          bhpSpans.forEach(function(span, i) {
-            var selectWrap = span.closest('.ant-select') || span.parentElement;
-            var innerInput = selectWrap ? selectWrap.querySelector('input') : null;
-            _log.push('🔍 DIAGNOSTIC[' + i + ']: found "Base House Pricing" span. wrap id="' + (selectWrap && selectWrap.id) + '" class="' + (selectWrap && selectWrap.className) + '"');
-            _log.push('🔍 DIAGNOSTIC[' + i + ']: inner input id="' + (innerInput && innerInput.id) + '" data-testid="' + (innerInput && innerInput.getAttribute('data-testid')) + '"');
-            _log.push('🔍 DIAGNOSTIC[' + i + ']: wrap outerHTML (first 1000 chars): ' + (selectWrap ? selectWrap.outerHTML.slice(0, 1000) : '(no wrap element found — span has no .ant-select ancestor)'));
-          });
-        } else {
-          _log.push('🔍 DIAGNOSTIC: "Base House Pricing" text not found anywhere on the page right now — the edit panel may not actually be open, or this item type shows its group completely differently. Dumping the side panel instead:');
-          var sidePanelEl2 = document.querySelector('.ant-layout-sider, aside, [class*="SidePanel"], [class*="side-panel"]');
-          _log.push('🔍 DIAGNOSTIC: side panel outerHTML (first 1500 chars): ' + (sidePanelEl2 ? sidePanelEl2.outerHTML.slice(0, 1500) : '(no side panel element found at all — row click may not have opened anything)'));
-        }
-        _log.push('⚠ fixSiteItemParentGroup: parentId input not found for ' + searchName);
-        return;
-      }
-
-      var pgWrapF = pgInputF.closest('.ant-select') || pgInputF.parentElement;
-      if (pgWrapF) { pgWrapF.click(); await _delay(400); }
-      pgInputF.focus(); await _delay(200);
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-      await _delay(100);
-      document.execCommand('insertText', false, targetParentGroup);
-      await _delay(1000);
-      var pgOptsF = document.querySelectorAll('.ant-select-item-option-content');
-      var pgOptF = null;
-      for (var pof=0; pof<pgOptsF.length; pof++) {
-        if ((pgOptsF[pof].textContent||'').trim() === targetParentGroup) { pgOptF = pgOptsF[pof]; break; }
-      }
-      if (!pgOptF) { _log.push('⚠ fixSiteItemParentGroup: "' + targetParentGroup + '" option not found for ' + searchName); return; }
-      var pgOptParentF = pgOptF.closest('.ant-select-item-option') || pgOptF.parentElement;
-      pgOptParentF.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
-      await _delay(80);
-      pgOptParentF.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-      pgOptParentF.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-      await _delay(500);
-
-      // Step 4: Save — same two-step dirty-tracking save sequence as editExistingItem
-      var sideElF = document.querySelector('.ant-layout-sider, aside');
-      var saveXF = sideElF ? sideElF.getBoundingClientRect().right + 5 : 10;
-      var saveYF = window.innerHeight / 2;
-      var saveTargetF = document.elementFromPoint(saveXF, saveYF) || document.body;
-      saveTargetF.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXF,clientY:saveYF}));
-      await _delay(150);
-      saveTargetF.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXF,clientY:saveYF}));
-      await _delay(900);
-      var dirtySaveF = null;
-      for (var dsf=0; dsf<15; dsf++) {
-        dirtySaveF = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveF) break;
-        await _delay(150);
-      }
-      if (dirtySaveF) {
-        dirtySaveF.click();
-        await _delay(800);
-      }
-
-      _log.push('✓ fixSiteItemParentGroup: ' + searchName + ' → parent group set to "' + targetParentGroup + '"');
     }
 
     // Group A allowance-tier description writer. setQty() (used for all
@@ -1772,13 +1624,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
           if (siteOptionsList[si2].existingLine) continue;
           await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost, markupPercent);
-          // createSiteItem's own parentId field reliably never appears
-          // during creation (confirmed live — even a 10s wait times out),
-          // so the item saves under whatever BuilderTrend's own default
-          // group is ("Base House Pricing"). Fix it up as a separate step
-          // now that it's a normal saved row, same as editExistingItem
-          // reliably edits other existing rows elsewhere in this file.
-          await fixSiteItemParentGroup(siteOptionsList[si2].name, 'Site Allowances');
         }
       }
     }
