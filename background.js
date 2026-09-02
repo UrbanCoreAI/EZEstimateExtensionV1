@@ -9,7 +9,7 @@ importScripts('update-manager.js');
 
 const SHEETS_API    = 'https://sheets.googleapis.com/v4/spreadsheets';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const SCOPES        = 'https://www.googleapis.com/auth/spreadsheets';
+const SCOPES        = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
 const OPENAI_API    = 'https://api.openai.com/v1/chat/completions';
 
 const DEFAULT_SHEET_ID   = '1iO37IiTagtu4OGEZSHA5C62tPRc5HOKMpq0UcsUI9ig';
@@ -83,9 +83,15 @@ function buildJobQuantitiesRow(values) {
   return row;
 }
 
-async function upsertJobQuantities(values) {
+async function upsertJobQuantities(values, extra) {
   const row = buildJobQuantitiesRow(values);
   row.updated_at = new Date().toISOString();
+  // source_plan: the houses.key (e.g. 'kiawah') when "Start From a Base
+  // Plan" was used, or the literal word CUSTOM otherwise -- see callers
+  // in popup.js, which read this off window._tkWf.selectedBasePlanHouse.
+  row.source_plan = (extra && extra.sourcePlan) || 'CUSTOM';
+  const email = await getSignedInEmail();
+  if (email) row.user_email = email;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/job_quantities`, {
     method: 'POST',
     headers: supabaseHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
@@ -217,7 +223,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 async function getConfig() {
   return new Promise(resolve => {
     chrome.storage.local.get(
-      ['clientId','sheetId','sheetName','accessToken','tokenExpiry','openaiKey'],
+      ['clientId','sheetId','sheetName','accessToken','tokenExpiry','openaiKey','signedInEmail'],
       (cfg) => {
         cfg.sheetId   = cfg.sheetId   || DEFAULT_SHEET_ID;
         cfg.sheetName = cfg.sheetName || DEFAULT_SHEET_NAME;
@@ -254,6 +260,33 @@ async function getValidToken() {
       resolve(token);
     });
   });
+}
+
+// Fetches the Google account email behind the current token, for the
+// Takeoff History "who did it" column. Cached in storage once known —
+// email doesn't change session to session, and this avoids an extra
+// network call on every single write. Best-effort: a failure here (e.g.
+// a not-yet-refreshed token that predates the userinfo.email scope
+// being added) just means that write logs with no email, same as the
+// existing Supabase-write warning pattern below.
+async function getSignedInEmail() {
+  const cfg = await getConfig();
+  if (cfg.signedInEmail) return cfg.signedInEmail;
+  try {
+    const token = await getValidToken();
+    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('userinfo fetch failed: HTTP ' + res.status);
+    const info = await res.json();
+    if (info.email) {
+      chrome.storage.local.set({ signedInEmail: info.email });
+      return info.email;
+    }
+  } catch (e) {
+    console.warn('[Keel] could not fetch signed-in email:', e.message);
+  }
+  return null;
 }
 
 // ─── Sheets API ───────────────────────────────────────────────────────────────
@@ -697,7 +730,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           // Estimate" actually reads from. Non-fatal — a Supabase hiccup
           // shouldn't block the Sheet write the user is watching for.
           let supabaseWarning = null;
-          try { await upsertJobQuantities(msg.values); }
+          try { await upsertJobQuantities(msg.values, { sourcePlan: msg.sourcePlan }); }
           catch (e) { supabaseWarning = e.message; }
           sendResponse({ ok: true, written: updates.length, supabaseWarning });
           break;

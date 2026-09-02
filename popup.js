@@ -1373,7 +1373,7 @@ async function writeAiToSheet() {
   }
   showStatus('Writing AI counts to database…', 'info', 0);
   try {
-    const res = await sendMsg('WRITE_VALUES', { values: values });
+    const res = await sendMsg('WRITE_VALUES', { values: values, sourcePlan: (window._tkWf && window._tkWf.selectedBasePlanHouse) || 'CUSTOM' });
     showStatus('✓ Wrote ' + res.written + ' values to database', 'success');
     setTimeout(function() { loadSheetTab(activeTab); }, 1200);
   } catch (e) {
@@ -2974,7 +2974,7 @@ async function startM1ClientPreview() {
 async function writeValues(values) {
   showStatus('Writing to database…', 'info', 0);
   try {
-    const res = await sendMsg('WRITE_VALUES', { values: values });
+    const res = await sendMsg('WRITE_VALUES', { values: values, sourcePlan: (window._tkWf && window._tkWf.selectedBasePlanHouse) || 'CUSTOM' });
     showStatus('✓ Wrote ' + res.written + ' value(s) to database', 'success');
     setTimeout(function() { loadSheetTab(activeTab); }, 1000);
   } catch (e) {
