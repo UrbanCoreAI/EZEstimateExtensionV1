@@ -1013,7 +1013,12 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           ccOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
           ccOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
           await _delay(600);
-          _log.push('✓ createSiteItem: cost code set');
+          // Log what was ACTUALLY matched/selected, not the intended
+          // parentGroup value — a silent exact-match failure here used to
+          // fall through to the "09 - Lot Clearing" fallback while still
+          // logging success, making it look like the right code was picked
+          // when it wasn't.
+          _log.push('✓ createSiteItem: cost code set to "' + ccOpt.textContent.trim() + '"' + (ccOpt.textContent.trim() !== parentGroup ? ' (⚠ intended "' + parentGroup + '" — fallback was used)' : ''));
         } else { _log.push('⚠ createSiteItem: cost code option not found — continuing'); }
       } else {
         _log.push('⚠ createSiteItem: cost code input not found (keyBase=' + keyBase + ')');
