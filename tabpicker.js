@@ -1019,9 +1019,15 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         _log.push('⚠ createSiteItem: cost code input not found (keyBase=' + keyBase + ')');
       }
 
-      // Step 5.5: Parent group — wait for it to appear after cost code is set, then type & pick
+      // Step 5.5: Parent group — wait for it to appear after cost code is set, then type & pick.
+      // 20x200ms (4s) wasn't always enough — a real write timed out here and
+      // the new site item silently fell back to BuilderTrend's own default
+      // parent group ("Base House Pricing") instead of the intended one,
+      // with no further recovery attempted below once that happens. 50x200ms
+      // (10s) gives real headroom against the same kind of UI lag other
+      // fields in this file already take 3-4+ seconds to settle from.
       var pgInput = null;
-      for (var pgwait=0; pgwait<20; pgwait++) {
+      for (var pgwait=0; pgwait<50; pgwait++) {
         pgInput = document.getElementById('parentId');
         if (pgInput) break;
         await _delay(200);
