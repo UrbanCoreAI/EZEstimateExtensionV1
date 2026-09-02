@@ -1034,6 +1034,20 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
       if (pgInput) {
         var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
+        // "parentGroup" here is actually a COST CODE string (e.g.
+        // "11 - Septic/Sewer"), not a real parent-group category name like
+        // "Site Allowances" — see SITE_DROPDOWN_MAP on the webpage. Selecting
+        // that cost code in Step 5 already auto-fills this field with the
+        // CORRECT category on its own. Searching this dropdown for the same
+        // cost-code text below would never match a category name, and would
+        // first clear out that already-correct value before failing to find
+        // a replacement — leaving it blank and falling back to
+        // BuilderTrend's own default group. Only touch it if it's genuinely
+        // still empty; never clear/retype over an existing selection.
+        var pgAlreadySet = pgWrap && pgWrap.querySelector('.ant-select-selection-item');
+        if (pgAlreadySet && (pgAlreadySet.textContent || '').trim()) {
+          _log.push('✓ createSiteItem: parent group already set to "' + pgAlreadySet.textContent.trim() + '" via cost code — leaving as-is');
+        } else {
         if (pgWrap) { pgWrap.click(); await _delay(400); }
         pgInput.focus(); await _delay(200);
         document.execCommand('selectAll', false, null);
@@ -1055,6 +1069,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           await _delay(500);
           _log.push('✓ createSiteItem: parent group set to ' + parentGroup);
         } else { _log.push('⚠ createSiteItem: parent group "' + parentGroup + '" not found — continuing'); }
+        }
       } else {
         _log.push('⚠ createSiteItem: parentId input not found after waiting');
       }
