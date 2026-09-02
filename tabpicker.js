@@ -1570,8 +1570,15 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
         // Markup applies to every item now (not just ones with a tier
         // description) — always call this, it no-ops internally on
-        // whichever of the two is actually absent.
-        await setItemMarkupAndDescription(itemsList[i].name, markupPercent, itemsList[i].description);
+        // whichever of the two is actually absent. EXCEPT Realtor Fees:
+        // its Unit Cost is a real market rate straight from the
+        // SALES TO EDIT - REALTOR cost_items row, not a total that
+        // already has markup baked into every other line, but it's
+        // still kept at 0% by deliberate choice (unchanged from before) —
+        // see fetchUnitCostsFromSupabase/QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME
+        // in popup.js for how its qty/unitCost actually get resolved now.
+        var itemMarkupPercent = (itemsList[i].name === 'Realtor Fees') ? 0 : markupPercent;
+        await setItemMarkupAndDescription(itemsList[i].name, itemMarkupPercent, itemsList[i].description);
         // Supabase-sourced unit cost — only set when the caller actually
         // resolved one (no match in cost_items => undefined => skipped,
         // leaving BuilderTrend's own preset rate untouched rather than
@@ -1601,28 +1608,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
     }
 
-    if (!stopped) {
-      await _delay(1000);
-
-      var totalVal = 0;
-      var footerSpan = document.querySelector('.BTGridFooterCell--ellipsis span[dir="ltr"]');
-      if (footerSpan) {
-        var footerTxt = (footerSpan.innerText || '').trim();
-        var footerMatch = footerTxt.match(/^\$([\d,]+\.?\d*)$/);
-        if (footerMatch) totalVal = parseFloat(footerMatch[1].replace(/,/g, ''));
-      }
-
-      if (totalVal > 0) {
-        _log.push('Grand total: $' + totalVal + ' → Realtor Fees unit cost');
-        await setQty('Realtor Fees', totalVal, true);
-        // Realtor Fees is itself computed off the grand total (which already
-        // includes markup on every other line) — marking it up again would
-        // double-count, so it always gets 0% regardless of markupPercent.
-        await setItemMarkupAndDescription('Realtor Fees', 0, undefined);
-      } else {
-        _log.push('⚠ Could not detect estimate total for Realtor Fees');
-      }
-    }
 
     // Custom-pricing-needed notification email — webpage Write to Estimate
     // only (notifyEstimator/notifyItemNames only ever arrive non-empty from

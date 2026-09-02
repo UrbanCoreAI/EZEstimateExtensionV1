@@ -43,7 +43,13 @@ const ITEM_NAME_TO_COST_ITEM_NAME = {
   'Countertop Allowance': 'Counterop Allowance',
   'Hardwood Flooring Allowance': 'Hardwood Allowance',
   'Tile Allowance': 'Tile Selection Allowance',
-  'Garage Door': 'Garage Overhead Doors'
+  'Garage Door': 'Garage Overhead Doors',
+  // Realtor Fees no longer types (grand total, BuilderTrend's own baked-in
+  // 0.35 quantity) -- it now reads its real Unit Cost straight from the
+  // SALES TO EDIT - REALTOR cost_items row/house_rates, same as every
+  // other item (see QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME below for its
+  // Quantity side).
+  'Realtor Fees': 'SALES TO EDIT - REALTOR'
 };
 
 // Separate from the map above on purpose: these 6 subtotal labels have no
@@ -66,7 +72,8 @@ const QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME = {
   'Total 1st Floor, Garage & Porch SF': 'Roofing',                                    // =$I$4+$I$12+$I$9+$I$10
   'Total 1st Floor Finished, 1st Floor Unfinished & Garage': 'Stone/ Gravel',         // =$I$4+$I$12
   'Total Finished 1st Floor SF': 'Insulation Crawlspace',                             // =$I$4
-  'Total Garage SF': 'Concrete Flatwork Turnkey'                                      // =$I$12
+  'Total Garage SF': 'Concrete Flatwork Turnkey',                                     // =$I$12
+  'Realtor Fees': 'Drywall'                                                            // SF of Finished Areas -- same proxy as 'Total Finished SF' above
 };
 
 // Everything below used to be a hardcoded Sheet D-cell number that drifted
@@ -82,7 +89,7 @@ const QUANTITY_FROM_FORMULA_ITEMS = [
   'Plumbing Fixture Allowance', 'Tile Allowance', 'Landscaping Allowance', 'Garage Door',
   'Total Finished SF', 'Total Finished SF & Unfinished SF (Under Roof Excluding Porches)',
   'Total 1st Floor, Garage & Porch SF', 'Total 1st Floor Finished, 1st Floor Unfinished & Garage',
-  'Total Finished 1st Floor SF', 'Total Garage SF'
+  'Total Finished 1st Floor SF', 'Total Garage SF', 'Realtor Fees'
 ];
 
 // Returns { itemName: unitCost | undefined }. unitCost is undefined for any
@@ -1519,6 +1526,7 @@ async function writeToEstimate() {
       { name: 'Driveway Allowance',    qty: 1 },
       { name: 'Landscaping Allowance', qty: 0 },
       { name: 'Tap Fees',              qty: 1 },
+      { name: 'Realtor Fees',          qty: 0 }, // resolved below via quantity_formula (SF of Finished Areas); Unit Cost comes from SALES TO EDIT - REALTOR
     ];
 
     // Fill in every quantity_formula-driven item (QUANTITY_FROM_FORMULA_ITEMS

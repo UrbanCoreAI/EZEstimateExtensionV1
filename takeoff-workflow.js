@@ -1909,6 +1909,7 @@
           { name: 'Driveway Allowance',    qty: 1 },
           { name: 'Landscaping Allowance', qty: 0 },
           { name: 'Tap Fees',              qty: 1 },
+          { name: 'Realtor Fees',          qty: 0 }, // resolved below via quantity_formula (SF of Finished Areas); Unit Cost comes from SALES TO EDIT - REALTOR
         ];
 
         // Fill in the quantity_formula-driven items from Supabase, evaluated
