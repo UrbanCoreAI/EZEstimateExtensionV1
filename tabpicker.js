@@ -1288,6 +1288,116 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
     }
 
+    // Fixes a just-created site item's parent group after the fact.
+    // createSiteItem's own parentId field never reliably appears during the
+    // CREATE flow itself (confirmed live: even a 10s wait times out) — but
+    // once the item exists as a normal saved row, its edit panel opens the
+    // same reliable way editExistingItem's does above, and the field is
+    // actually present there. Reuses that same search → open-row pattern,
+    // then does the parent-group select + save.
+    async function fixSiteItemParentGroup(searchName, targetParentGroup) {
+      // Step 1: Search for item → click LineItemResult to open edit panel
+      // (identical to editExistingItem's Step 1 — same search-select control)
+      var siF = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
+      if (!siF) {
+        var candsF = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
+        siF = candsF.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
+      }
+      if (siF) {
+        var contF = siF.closest('.ant-select-selector') || siF.parentElement;
+        if (contF) { contF.click(); await _delay(200); }
+        siF.focus(); await _delay(100);
+        var nsF = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nsF.call(siF, searchName);
+        siF.dispatchEvent(new Event('input',{bubbles:true}));
+        siF.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(900);
+        var fResult = null;
+        var fItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var fli=0; fli<fItems.length; fli++) {
+          if ((fItems[fli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { fResult = fItems[fli]; break; }
+        }
+        if (fResult) {
+          fResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+          fResult.click();
+          await _delay(1000);
+        }
+        nsF.call(siF, '');
+        siF.dispatchEvent(new Event('input',{bubbles:true}));
+        siF.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(400);
+      }
+
+      // Step 2: Find the row in the table and click it to open its edit panel
+      var targetRowF = null;
+      for (var tdf=0; tdf<20; tdf++) {
+        var bTagsF = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var tdf2=0; tdf2<bTagsF.length; tdf2++) {
+          if ((bTagsF[tdf2].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
+            targetRowF = bTagsF[tdf2].closest('tr.proposalBaseLineItemContainerRow');
+            break;
+          }
+        }
+        if (targetRowF) break;
+        await _delay(150);
+      }
+      if (!targetRowF) { _log.push('⚠ fixSiteItemParentGroup: row not found for ' + searchName); return; }
+      targetRowF.click();
+      await _delay(800);
+
+      // Step 3: Find the parent-group Ant Select in the now-open edit panel
+      var pgInputF = null;
+      for (var pgf=0; pgf<25; pgf++) {
+        pgInputF = document.getElementById('parentId');
+        if (pgInputF) break;
+        await _delay(200);
+      }
+      if (!pgInputF) { _log.push('⚠ fixSiteItemParentGroup: parentId input not found for ' + searchName); return; }
+
+      var pgWrapF = pgInputF.closest('.ant-select') || pgInputF.parentElement;
+      if (pgWrapF) { pgWrapF.click(); await _delay(400); }
+      pgInputF.focus(); await _delay(200);
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+      await _delay(100);
+      document.execCommand('insertText', false, targetParentGroup);
+      await _delay(1000);
+      var pgOptsF = document.querySelectorAll('.ant-select-item-option-content');
+      var pgOptF = null;
+      for (var pof=0; pof<pgOptsF.length; pof++) {
+        if ((pgOptsF[pof].textContent||'').trim() === targetParentGroup) { pgOptF = pgOptsF[pof]; break; }
+      }
+      if (!pgOptF) { _log.push('⚠ fixSiteItemParentGroup: "' + targetParentGroup + '" option not found for ' + searchName); return; }
+      var pgOptParentF = pgOptF.closest('.ant-select-item-option') || pgOptF.parentElement;
+      pgOptParentF.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
+      await _delay(80);
+      pgOptParentF.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
+      pgOptParentF.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+      await _delay(500);
+
+      // Step 4: Save — same two-step dirty-tracking save sequence as editExistingItem
+      var sideElF = document.querySelector('.ant-layout-sider, aside');
+      var saveXF = sideElF ? sideElF.getBoundingClientRect().right + 5 : 10;
+      var saveYF = window.innerHeight / 2;
+      var saveTargetF = document.elementFromPoint(saveXF, saveYF) || document.body;
+      saveTargetF.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXF,clientY:saveYF}));
+      await _delay(150);
+      saveTargetF.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXF,clientY:saveYF}));
+      await _delay(900);
+      var dirtySaveF = null;
+      for (var dsf=0; dsf<15; dsf++) {
+        dirtySaveF = document.querySelector('[data-testid="dirtyTrackingSave"]');
+        if (dirtySaveF) break;
+        await _delay(150);
+      }
+      if (dirtySaveF) {
+        dirtySaveF.click();
+        await _delay(800);
+      }
+
+      _log.push('✓ fixSiteItemParentGroup: ' + searchName + ' → parent group set to "' + targetParentGroup + '"');
+    }
+
     // Group A allowance-tier description writer. setQty() (used for all
     // Group A quantity edits) only opens a small quantity spinbutton popup
     // with no description field, so a Better/Best upgrade note needs this
@@ -1625,6 +1735,13 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           if (window.__keelWriteStop) { _log.push('⏹ Stopped'); stopped = true; break; }
           if (siteOptionsList[si2].existingLine) continue;
           await createSiteItem(siteOptionsList[si2].name, siteOptionsList[si2].parentGroup, siteOptionsList[si2].unitCost, markupPercent);
+          // createSiteItem's own parentId field reliably never appears
+          // during creation (confirmed live — even a 10s wait times out),
+          // so the item saves under whatever BuilderTrend's own default
+          // group is ("Base House Pricing"). Fix it up as a separate step
+          // now that it's a normal saved row, same as editExistingItem
+          // reliably edits other existing rows elsewhere in this file.
+          await fixSiteItemParentGroup(siteOptionsList[si2].name, 'Site Allowances');
         }
       }
     }
