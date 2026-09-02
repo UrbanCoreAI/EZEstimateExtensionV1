@@ -1627,7 +1627,13 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           jobName = '(unknown job)';
         }
 
-        _log.push('Sending custom-pricing-needed notification for: ' + notifyItemNames.join(', '));
+        // notifyItemNames entries are { name, price } — price is what the
+        // item was just written to the estimate at, so the email can show
+        // the estimator the actual current number, not just which items to
+        // look at. location.href is this exact job's Estimate page (this
+        // function runs injected directly into it), so the email can link
+        // straight back to it instead of a generic BuilderTrend URL.
+        _log.push('Sending custom-pricing-needed notification for: ' + notifyItemNames.map(function (it) { return it.name; }).join(', '));
         var notifyRes = await fetch('https://fujddlemswhbdqrhpekt.supabase.co/functions/v1/send-pricing-notification', {
           method: 'POST',
           headers: {
@@ -1635,7 +1641,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
             'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4',
             'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1amRkbGVtc3doYmRxcmhwZWt0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQzMTYzODcsImV4cCI6MjA5OTg5MjM4N30.pR2IINeUB6RDAXBG6IDHrLc3diW8TNYYN1jAIEdXFm4'
           },
-          body: JSON.stringify({ jobName: jobName, items: notifyItemNames })
+          body: JSON.stringify({ jobName: jobName, jobUrl: location.href, items: notifyItemNames })
         });
         var notifyBody = await notifyRes.json().catch(function () { return {}; });
         if (notifyRes.ok && notifyBody.ok) {

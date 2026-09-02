@@ -7,7 +7,7 @@
 // name and the list of items that were written with "pricing subject to
 // change" because they were flagged for custom pricing.
 //
-// Request body: { jobName: string, items: string[] }
+// Request body: { jobName: string, jobUrl?: string, items: { name: string, price: number }[] }
 // Response: { ok: true } or { ok: false, error: string }
 //
 // ── One-time setup needed before this works ──────────────────────────────
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { jobName, items } = await req.json();
+    const { jobName, jobUrl, items } = await req.json();
 
     if (!jobName || typeof jobName !== 'string') {
       throw new Error('Missing or invalid "jobName"');
@@ -47,6 +47,11 @@ Deno.serve(async (req) => {
     if (!Array.isArray(items) || items.length === 0) {
       throw new Error('Missing or empty "items" list — nothing to notify about');
     }
+    // items is [{ name, price }, ...] — price is whatever the item was just
+    // written to the estimate at. jobUrl is optional (older callers may not
+    // send it yet) — falls back to the generic Estimate app URL so the
+    // email still has *a* link either way.
+    const safeJobUrl = (typeof jobUrl === 'string' && jobUrl) ? jobUrl : 'https://buildertrend.net/app/Estimate';
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -76,8 +81,9 @@ Deno.serve(async (req) => {
       throw new Error('RESEND_API_KEY / NOTIFY_FROM_EMAIL not configured on this Edge Function');
     }
 
-    const itemListHtml = items.map((name: string) => `<li>${escapeHtml(name)}</li>`).join('');
-    const itemListText = items.map((name: string) => '- ' + name).join('\n');
+    const formatPrice = (n: number) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const itemListHtml = items.map((it: { name: string; price: number }) => `<li>${escapeHtml(it.name)} — currently priced at ${formatPrice(it.price)}</li>`).join('');
+    const itemListText = items.map((it: { name: string; price: number }) => '- ' + it.name + ' — currently priced at ' + formatPrice(it.price)).join('\n');
 
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -89,8 +95,8 @@ Deno.serve(async (req) => {
         from: fromEmail,
         to: recipients,
         subject: `Custom pricing needed — ${jobName}`,
-        html: `<p>The estimate for <strong>${escapeHtml(jobName)}</strong> was just written to BuilderTrend with the following item(s) flagged as needing custom pricing:</p><ul>${itemListHtml}</ul><p>Their descriptions were marked "Pricing is subject to change."</p>`,
-        text: `The estimate for ${jobName} was just written to BuilderTrend with the following item(s) flagged as needing custom pricing:\n\n${itemListText}\n\nTheir descriptions were marked "Pricing is subject to change."`,
+        html: `<p>The estimate for <strong>${escapeHtml(jobName)}</strong> was just written to BuilderTrend with the following item(s) flagged as needing custom pricing:</p><ul>${itemListHtml}</ul><p>Their descriptions were marked "Pricing is subject to change."</p><p><a href="${escapeHtml(safeJobUrl)}">Open this job's Estimate in BuilderTrend</a></p>`,
+        text: `The estimate for ${jobName} was just written to BuilderTrend with the following item(s) flagged as needing custom pricing:\n\n${itemListText}\n\nTheir descriptions were marked "Pricing is subject to change."\n\nOpen this job's Estimate: ${safeJobUrl}`,
       }),
     });
 
