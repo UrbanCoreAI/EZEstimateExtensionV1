@@ -1345,6 +1345,14 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       targetRowF.click();
       await _delay(800);
 
+      // DIAGNOSTIC: confirm the right panel actually opened for this item
+      // before we even look for the parent-group field — if the title
+      // shown doesn't match searchName, everything below is looking at the
+      // wrong panel entirely, which would explain a false "not found".
+      var openedTitleEls = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"], input[data-testid="itemTitle"]');
+      var openedTitles = Array.from(openedTitleEls).map(function(el){ return (el.textContent||el.value||'').trim(); });
+      _log.push('🔍 DIAGNOSTIC: after clicking row for "' + searchName + '", panel title field(s) show: [' + openedTitles.join(' | ') + ']');
+
       // Step 3: Find the parent-group Ant Select in the now-open edit panel
       var pgInputF = null;
       for (var pgf=0; pgf<25; pgf++) {
@@ -1352,7 +1360,31 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         if (pgInputF) break;
         await _delay(200);
       }
-      if (!pgInputF) { _log.push('⚠ fixSiteItemParentGroup: parentId input not found for ' + searchName); return; }
+      if (!pgInputF) {
+        // DIAGNOSTIC: id="parentId" isn't there — but we know from a real
+        // screenshot that a span reading "Base House Pricing" IS on the
+        // page right now. Find that exact span and log its real container's
+        // id/class/outerHTML so we know what selector actually works,
+        // instead of guessing again.
+        var bhpSpans = Array.from(document.querySelectorAll('.ant-select-selection-item')).filter(function(el) {
+          return /base house pricing/i.test(el.textContent || '') || /base house pricing/i.test(el.getAttribute('title') || '');
+        });
+        if (bhpSpans.length) {
+          bhpSpans.forEach(function(span, i) {
+            var selectWrap = span.closest('.ant-select') || span.parentElement;
+            var innerInput = selectWrap ? selectWrap.querySelector('input') : null;
+            _log.push('🔍 DIAGNOSTIC[' + i + ']: found "Base House Pricing" span. wrap id="' + (selectWrap && selectWrap.id) + '" class="' + (selectWrap && selectWrap.className) + '"');
+            _log.push('🔍 DIAGNOSTIC[' + i + ']: inner input id="' + (innerInput && innerInput.id) + '" data-testid="' + (innerInput && innerInput.getAttribute('data-testid')) + '"');
+            _log.push('🔍 DIAGNOSTIC[' + i + ']: wrap outerHTML (first 1000 chars): ' + (selectWrap ? selectWrap.outerHTML.slice(0, 1000) : '(no wrap element found — span has no .ant-select ancestor)'));
+          });
+        } else {
+          _log.push('🔍 DIAGNOSTIC: "Base House Pricing" text not found anywhere on the page right now — the edit panel may not actually be open, or this item type shows its group completely differently. Dumping the side panel instead:');
+          var sidePanelEl2 = document.querySelector('.ant-layout-sider, aside, [class*="SidePanel"], [class*="side-panel"]');
+          _log.push('🔍 DIAGNOSTIC: side panel outerHTML (first 1500 chars): ' + (sidePanelEl2 ? sidePanelEl2.outerHTML.slice(0, 1500) : '(no side panel element found at all — row click may not have opened anything)'));
+        }
+        _log.push('⚠ fixSiteItemParentGroup: parentId input not found for ' + searchName);
+        return;
+      }
 
       var pgWrapF = pgInputF.closest('.ant-select') || pgInputF.parentElement;
       if (pgWrapF) { pgWrapF.click(); await _delay(400); }
