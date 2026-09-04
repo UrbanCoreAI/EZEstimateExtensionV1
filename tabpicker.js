@@ -260,6 +260,69 @@ async function selectTab(tab) {
             var groups = targetNode.memoizedProps.formatDataWithoutFiltering;
             if (!Array.isArray(groups) || !groups.length) return { ok: false, error: 'formatDataWithoutFiltering missing or empty' };
 
+            var diag = [];
+            var beforeOrder = groups.map(function (g) { return g.title; });
+
+            // ── Diagnostic: figure out which property on a group object
+            // actually holds its child line items (unknown without live
+            // data — trying the most likely names). Logged either way so
+            // the real shape is visible even if none of these guesses hit.
+            var ITEMS_KEY_CANDIDATES = ['items', 'lineItems', 'formatItems', 'proposalFormatItems', 'lineItemDataSet', 'children'];
+            var itemsKey = null;
+            for (var gk = 0; gk < groups.length && !itemsKey; gk++) {
+              for (var ck = 0; ck < ITEMS_KEY_CANDIDATES.length; ck++) {
+                if (Array.isArray(groups[gk][ITEMS_KEY_CANDIDATES[ck]]) && groups[gk][ITEMS_KEY_CANDIDATES[ck]].length) {
+                  itemsKey = ITEMS_KEY_CANDIDATES[ck];
+                  break;
+                }
+              }
+            }
+            diag.push('groups: ' + groups.map(function (g) { return '"' + g.title + '" (keys: ' + Object.keys(g).join(',') + ')'; }).join(' | '));
+            diag.push('detected items-array key: ' + (itemsKey || '(none matched — see raw group below)'));
+            if (!itemsKey) {
+              try { diag.push('first group raw (truncated 1500 chars): ' + JSON.stringify(groups[0]).slice(0, 1500)); }
+              catch (eJ) { diag.push('first group could not be JSON-stringified: ' + eJ.message); }
+            }
+
+            // ── Move any Sewer/Water site-allowance items sitting under the
+            // wrong group into "Site Allowances" directly in this same
+            // state update, bypassing the unreliable dropdown UI entirely.
+            var SITE_ITEM_TITLES = [
+              'Sewer - City (No Septic)', 'Sewer - Conventional Septic', 'Sewer - Engineered Septic',
+              'Water - Well'
+            ];
+            var moves = [];
+            if (itemsKey) {
+              var siteIdx = groups.findIndex(function (g) { return norm(g.title) === norm('Site Allowances'); });
+              if (siteIdx === -1) {
+                diag.push('"Site Allowances" group not found by title — cannot move anything into it');
+              } else {
+                var newSiteItems = groups[siteIdx][itemsKey].slice();
+                for (var gi = 0; gi < groups.length; gi++) {
+                  if (gi === siteIdx) continue;
+                  var arr = groups[gi][itemsKey];
+                  if (!Array.isArray(arr) || !arr.length) continue;
+                  var keep = [];
+                  for (var ii = 0; ii < arr.length; ii++) {
+                    var it = arr[ii];
+                    var itTitle = (it.title || it.name || it.itemTitle || '').trim();
+                    if (SITE_ITEM_TITLES.indexOf(itTitle) !== -1) {
+                      newSiteItems.push(it);
+                      moves.push(itTitle + ': "' + groups[gi].title + '" → "Site Allowances"');
+                    } else {
+                      keep.push(it);
+                    }
+                  }
+                  if (keep.length !== arr.length) {
+                    groups[gi] = Object.assign({}, groups[gi]);
+                    groups[gi][itemsKey] = keep;
+                  }
+                }
+                groups[siteIdx] = Object.assign({}, groups[siteIdx]);
+                groups[siteIdx][itemsKey] = newSiteItems;
+              }
+            }
+
             // Pull DESIRED groups to front, keep rest in original relative order
             var ordered = [];
             var remaining = groups.slice();
@@ -278,10 +341,12 @@ async function selectTab(tab) {
               ordered[i] = Object.assign({}, ordered[i], { displayOrder: i });
             }
 
+            var afterOrder = ordered.map(function (g) { return g.title; });
+
             // Call BT's own handler — it handles auth, API format, everything
             await targetNode.memoizedProps.onUpdateProposalFormatItems(ordered);
 
-            return { ok: true };
+            return { ok: true, diag: diag, moves: moves, beforeOrder: beforeOrder, afterOrder: afterOrder };
           }
         });
 
@@ -291,6 +356,16 @@ async function selectTab(tab) {
           statusEl.className = 'progress-status success';
           statusEl.textContent = '✓ Wrote ' + res2.ok + ' item(s) — group reorder failed (see log).';
         } else {
+          if (rr) {
+            log('  Group order before: ' + (rr.beforeOrder || []).join(' → '));
+            log('  Group order after:  ' + (rr.afterOrder || []).join(' → '));
+            (rr.diag || []).forEach(function (d) { log('  🔍 ' + d); });
+            if (rr.moves && rr.moves.length) {
+              rr.moves.forEach(function (m) { log('  ✓ Moved: ' + m); });
+            } else {
+              log('  (no site-allowance items needed moving this time)');
+            }
+          }
           statusEl.className = 'progress-status success';
           statusEl.textContent = '✓ Wrote ' + res2.ok + ' item(s) and reordered groups successfully.';
         }
