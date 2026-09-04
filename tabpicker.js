@@ -397,11 +397,6 @@ async function selectTab(tab) {
 async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, slowConnection, notifyEstimator, notifyItemNames) {
   try {
     var _log = [];
-    // One-shot diagnostic (setItemMarkupAndDescription, below): is a
-    // quantity spinbutton also reachable from the big side panel, or is it
-    // only ever reachable through setQty's separate inline-cell popup?
-    // Logged once, on the first item, so it doesn't repeat ~20+ times.
-    var _panelFieldDiagnosticLogged = false;
     // Every wait in this function funnels through _delay — doubling it here
     // is enough to double retry-loop budgets too (same iteration count, each
     // iteration just takes twice as long), so no loop counts need to change.
@@ -412,6 +407,39 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       setter.call(input, String(val));
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // Types a number into an Ant Design InputNumber-style spinbutton
+    // (quantity, unit cost) one character at a time with real keydown/
+    // keypress/keyup events — extracted from setQty, which already relied
+    // on exactly this. A plain native-setter + single "input" event (like
+    // writeReactValue uses for plain text fields) isn't enough for these
+    // controlled numeric fields to register the value correctly.
+    async function typeNumericValue(inputEl, numValue) {
+      inputEl.focus();
+      await _delay(150);
+      inputEl.select();
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, ctrlKey: true, bubbles: true }));
+      await _delay(50);
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', keyCode: 46, bubbles: true }));
+      reactSet(inputEl, '');
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      await _delay(100);
+
+      var rounded = Math.round(numValue * 100) / 100;
+      var valStr = String(rounded);
+      var setter2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      for (var ci = 0; ci < valStr.length; ci++) {
+        var ch = valStr[ci];
+        var code = ch.charCodeAt(0);
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: ch, keyCode: code, bubbles: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, bubbles: true }));
+        setter2.call(inputEl, valStr.slice(0, ci + 1));
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: ch, keyCode: code, bubbles: true }));
+        await _delay(20);
+      }
+      await _delay(200);
     }
 
     // Global markup percent (Supabase markup_settings, singleton row,
@@ -658,30 +686,7 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
       if (!qtyInput) { _log.push('○ ' + name + ' — qty input not found'); return; }
 
-      qtyInput.focus();
-      await _delay(150);
-      qtyInput.select();
-      qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, ctrlKey: true, bubbles: true }));
-      await _delay(50);
-      qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', keyCode: 46, bubbles: true }));
-      reactSet(qtyInput, '');
-      qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
-      await _delay(100);
-
-      var roundedQty = Math.round(qty * 100) / 100;
-      var valStr = String(roundedQty);
-      var setter2 = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      for (var ci = 0; ci < valStr.length; ci++) {
-        var ch = valStr[ci];
-        var code = ch.charCodeAt(0);
-        qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: ch, keyCode: code, bubbles: true }));
-        qtyInput.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, bubbles: true }));
-        setter2.call(qtyInput, valStr.slice(0, ci + 1));
-        qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
-        qtyInput.dispatchEvent(new KeyboardEvent('keyup', { key: ch, keyCode: code, bubbles: true }));
-        await _delay(20);
-      }
-      await _delay(200);
+      await typeNumericValue(qtyInput, qty);
 
       var saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
       if (!saveBtn) {
@@ -1457,23 +1462,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         _log.push('⚠ setItemMarkupAndDescription: title ValueDisplay not found for ' + searchName);
       }
 
-      // DIAGNOSTIC (once): is a quantity spinbutton also present in THIS
-      // side panel, alongside unit cost (already proven present here by
-      // editExistingItem elsewhere)? Answers whether quantity+markup+unit
-      // cost could all be set in one panel visit, or whether quantity is
-      // genuinely only reachable through setQty's separate inline popup.
-      if (!_panelFieldDiagnosticLogged) {
-        _panelFieldDiagnosticLogged = true;
-        var diagQtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
-                         || document.querySelector('input[role="spinbutton"]')
-                         || document.querySelector('input.ant-input-number-input');
-        var diagUcInput = document.querySelector('input[data-testid="unitCost"], input#unitCost');
-        _log.push('🔍 DIAGNOSTIC (panel for "' + searchName + '"): quantity spinbutton in side panel = ' +
-          (diagQtyInput ? ('FOUND (value="' + diagQtyInput.value + '", data-testid="' + diagQtyInput.getAttribute('data-testid') + '")') : 'NOT FOUND'));
-        _log.push('🔍 DIAGNOSTIC (panel for "' + searchName + '"): unit cost input in side panel = ' +
-          (diagUcInput ? ('FOUND (value="' + diagUcInput.value + '")') : 'NOT FOUND'));
-      }
-
       // Step 4: Find + write the description textarea, if one was given
       // (no title/cost edits here). A missing textarea doesn't abort the
       // whole item — markup below still gets a chance to write.
@@ -1519,6 +1507,164 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
 
       _log.push('✓ setItemMarkupAndDescription: ' + searchName + (markupPercent !== null && markupPercent !== undefined ? ' → markup ' + markupPercent + '%' : '') + (description ? ' → "' + description + '"' : ''));
+    }
+
+    // Combines what used to be 3 separate search→open→save round trips
+    // (setQty for quantity, setItemMarkupAndDescription for markup, setQty
+    // again for unit cost) into ONE side-panel visit — confirmed live that
+    // the quantity spinbutton (data-testid="quantity") is present in the
+    // same panel as unit cost and markup, not a different popup. Same
+    // search/open-row/open-panel steps as setItemMarkupAndDescription
+    // above; qty and unit cost use typeNumericValue (same proven mechanism
+    // setQty already used) instead of writeReactValue, since these are
+    // Ant Design InputNumber fields, not plain text inputs.
+    //
+    // isUnitCostFirst preserves setQty's own quirk: for some items the
+    // "quantity" value is deliberately written into the unit-cost field
+    // instead of the quantity field (see the main loop's existing
+    // setQty(...,isUnitCost) call) — same meaning here.
+    async function setQtyMarkupUnitCostCombined(name, qty, isUnitCostFirst, unitCost, markupPercent, description) {
+      var startTime = performance.now();
+      var nsC = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+
+      // Step 1: Search for item → click LineItemResult (same as setItemMarkupAndDescription)
+      var siC = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
+      if (!siC) {
+        var candsC = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
+        siC = candsC.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
+      }
+      if (siC) {
+        var contC = siC.closest('.ant-select-selector') || siC.parentElement;
+        if (contC) { contC.click(); await _delay(200); }
+        siC.focus(); await _delay(100);
+        nsC.call(siC, name);
+        siC.dispatchEvent(new Event('input',{bubbles:true}));
+        siC.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(900);
+        var cResult = null;
+        var cItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
+        for (var cli=0; cli<cItems.length; cli++) {
+          if ((cItems[cli].innerText||'').trim().toLowerCase() === name.toLowerCase()) { cResult = cItems[cli]; break; }
+        }
+        if (cResult) {
+          cResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+          cResult.click();
+          await _delay(1000);
+        }
+        nsC.call(siC, '');
+        siC.dispatchEvent(new Event('input',{bubbles:true}));
+        siC.dispatchEvent(new Event('change',{bubbles:true}));
+        await _delay(400);
+      }
+
+      // Step 2: Find the row → click it to open the side panel
+      var targetRowC = null;
+      for (var tdiC=0; tdiC<20; tdiC++) {
+        var bTagsC = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
+        for (var tdi2C=0; tdi2C<bTagsC.length; tdi2C++) {
+          if ((bTagsC[tdi2C].textContent||'').trim().toLowerCase() === name.toLowerCase()) {
+            targetRowC = bTagsC[tdi2C].closest('tr.proposalBaseLineItemContainerRow');
+            break;
+          }
+        }
+        if (targetRowC) break;
+        await _delay(150);
+      }
+      if (!targetRowC) { _log.push('⚠ setQtyMarkupUnitCostCombined: row not found for ' + name); return; }
+      targetRowC.click();
+      await _delay(800);
+
+      // Step 3: Click the title ValueDisplay to open the panel's edit context
+      var titleDisplayC = null;
+      for (var tddC=0; tddC<15; tddC++) {
+        var tDisplaysC = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
+        for (var tdi3C=0; tdi3C<tDisplaysC.length; tdi3C++) {
+          if ((tDisplaysC[tdi3C].textContent||'').trim().toLowerCase() === name.toLowerCase()) { titleDisplayC = tDisplaysC[tdi3C]; break; }
+        }
+        if (titleDisplayC) break;
+        await _delay(100);
+      }
+      if (titleDisplayC) { titleDisplayC.click(); await _delay(400); }
+      else { _log.push('⚠ setQtyMarkupUnitCostCombined: title ValueDisplay not found for ' + name); }
+
+      // Step 4: Quantity — into the unit-cost field instead, if isUnitCostFirst
+      var qtyResult = null;
+      var qtyInputC = isUnitCostFirst
+        ? document.querySelector('input[data-testid="unitCost"], input#unitCost')
+        : (document.querySelector('input[data-testid="quantity"]')
+           || document.querySelector('input[role="spinbutton"].ant-input-number-input')
+           || document.querySelector('input[role="spinbutton"]')
+           || document.querySelector('input.ant-input-number-input'));
+      if (qtyInputC) {
+        await typeNumericValue(qtyInputC, qty);
+        qtyResult = qty;
+      } else {
+        _log.push('⚠ setQtyMarkupUnitCostCombined: ' + (isUnitCostFirst ? 'unit cost' : 'quantity') + ' input not found for ' + name);
+      }
+
+      // Step 5: Description, if given
+      if (description) {
+        var descAreaC = null;
+        for (var daC = 0; daC < 30; daC++) {
+          descAreaC = document.getElementById('description')
+                   || document.querySelector('textarea[data-testid="description"]')
+                   || document.querySelector('textarea[name="description"]');
+          if (descAreaC) break;
+          await _delay(150);
+        }
+        if (descAreaC) {
+          descAreaC.scrollIntoView({ behavior: 'instant', block: 'center' });
+          writeReactValue(descAreaC, description);
+          await _delay(250);
+        } else {
+          _log.push('⚠ setQtyMarkupUnitCostCombined: description textarea not found for ' + name);
+        }
+      }
+
+      // Step 6: Markup
+      await trySetMarkupPercent(markupPercent, 'setQtyMarkupUnitCostCombined: ' + name);
+
+      // Step 7: Unit cost (second, separate value) — only when provided and
+      // not already used as the quantity target above
+      var ucResult = null;
+      if (!isUnitCostFirst && unitCost !== undefined && unitCost !== null) {
+        var ucInputC = document.querySelector('input[data-testid="unitCost"], input#unitCost');
+        if (ucInputC) {
+          await typeNumericValue(ucInputC, parseFloat(unitCost));
+          ucResult = unitCost;
+        } else {
+          _log.push('⚠ setQtyMarkupUnitCostCombined: unit cost input not found for ' + name);
+        }
+      }
+
+      // Step 8: Save — same coordinate-click + dirty-tracking-popup pattern
+      // as setItemMarkupAndDescription/editExistingItem
+      var sideElC = document.querySelector('.ant-layout-sider, aside');
+      var saveXC = sideElC ? sideElC.getBoundingClientRect().right + 5 : 10;
+      var saveYC = window.innerHeight / 2;
+      var saveTargetC = document.elementFromPoint(saveXC, saveYC) || document.body;
+      saveTargetC.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXC,clientY:saveYC}));
+      await _delay(150);
+      saveTargetC.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXC,clientY:saveYC}));
+      await _delay(900);
+
+      var dirtySaveC = null;
+      for (var dsC=0; dsC<15; dsC++) {
+        dirtySaveC = document.querySelector('[data-testid="dirtyTrackingSave"]');
+        if (dirtySaveC) break;
+        await _delay(150);
+      }
+      if (dirtySaveC) {
+        dirtySaveC.click();
+        await _delay(800);
+      }
+
+      var totalTimeC = performance.now() - startTime;
+      _log.push('✓ ' + name +
+        (qtyResult !== null ? ' → ' + qtyResult + (isUnitCostFirst ? ' (unit cost)' : ' (qty)') : '') +
+        (markupPercent !== null && markupPercent !== undefined ? ' → markup ' + markupPercent + '%' : '') +
+        (ucResult !== null ? ' → ' + ucResult + ' (unit cost)' : '') +
+        ' (' + totalTimeC.toFixed(0) + 'ms)');
     }
 
     // Like editExistingItem, but scoped to a specific group's rows only —
@@ -1684,30 +1830,25 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (editOpt) {
         await editExistingItem(itemsList[i].name, editOpt.name, editOpt.unitCost, editOpt.description, markupPercent);
       } else {
-        await setQty(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost);
         // Markup applies to every item now (not just ones with a tier
-        // description) — always call this, it no-ops internally on
-        // whichever of the two is actually absent. EXCEPT Realtor Fees:
-        // its Unit Cost is a real market rate straight from the
-        // SALES TO EDIT - REALTOR cost_items row, not a total that
-        // already has markup baked into every other line, but it's
-        // still kept at 0% by deliberate choice (unchanged from before) —
-        // see fetchUnitCostsFromSupabase/QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME
-        // in popup.js for how its qty/unitCost actually get resolved now.
+        // description). EXCEPT Realtor Fees: its Unit Cost is a real
+        // market rate straight from the SALES TO EDIT - REALTOR cost_items
+        // row, not a total that already has markup baked into every other
+        // line, but it's still kept at 0% by deliberate choice (unchanged
+        // from before) — see fetchUnitCostsFromSupabase/
+        // QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME in popup.js for how its
+        // qty/unitCost actually get resolved now.
         var itemMarkupPercent = (itemsList[i].name === 'Realtor Fees') ? 0 : markupPercent;
-        await setItemMarkupAndDescription(itemsList[i].name, itemMarkupPercent, itemsList[i].description);
-        // Supabase-sourced unit cost — only set when the caller actually
-        // resolved one (no match in cost_items => undefined => skipped,
-        // leaving BuilderTrend's own preset rate untouched rather than
-        // guessing or writing a zero). Reuses setQty's own isUnitCost=true
-        // path (already proven — this is the same mechanism the Realtor
-        // Fees grand-total write already uses below) rather than the
-        // separate side-panel approach setItemUnitCost() used, which opens
-        // a different BT UI surface than the small popup setQty already
-        // knows how to drive.
-        if (itemsList[i].unitCost !== undefined && itemsList[i].unitCost !== null) {
-          await setQty(itemsList[i].name, itemsList[i].unitCost, true);
-        }
+        // Confirmed live (2026-09-04): the quantity spinbutton, unit cost
+        // input, and markup field are all reachable from the SAME side
+        // panel — one open→fill→save now replaces what used to be 3
+        // separate search/open/save round trips (setQty for qty,
+        // setItemMarkupAndDescription for markup, setQty again for unit
+        // cost). Supabase-sourced unit cost is still only set when the
+        // caller actually resolved one (no match in cost_items =>
+        // undefined => left alone, never guessed or zeroed).
+        var itemUnitCost = (itemsList[i].unitCost !== undefined && itemsList[i].unitCost !== null) ? itemsList[i].unitCost : null;
+        await setQtyMarkupUnitCostCombined(itemsList[i].name, itemsList[i].qty, itemsList[i].isUnitCost, itemUnitCost, itemMarkupPercent, itemsList[i].description);
       }
     }
 
