@@ -397,6 +397,11 @@ async function selectTab(tab) {
 async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, slowConnection, notifyEstimator, notifyItemNames) {
   try {
     var _log = [];
+    // One-shot diagnostic (setItemMarkupAndDescription, below): is a
+    // quantity spinbutton also reachable from the big side panel, or is it
+    // only ever reachable through setQty's separate inline-cell popup?
+    // Logged once, on the first item, so it doesn't repeat ~20+ times.
+    var _panelFieldDiagnosticLogged = false;
     // Every wait in this function funnels through _delay — doubling it here
     // is enough to double retry-loop budgets too (same iteration count, each
     // iteration just takes twice as long), so no loop counts need to change.
@@ -1450,6 +1455,23 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await _delay(400);
       } else {
         _log.push('⚠ setItemMarkupAndDescription: title ValueDisplay not found for ' + searchName);
+      }
+
+      // DIAGNOSTIC (once): is a quantity spinbutton also present in THIS
+      // side panel, alongside unit cost (already proven present here by
+      // editExistingItem elsewhere)? Answers whether quantity+markup+unit
+      // cost could all be set in one panel visit, or whether quantity is
+      // genuinely only reachable through setQty's separate inline popup.
+      if (!_panelFieldDiagnosticLogged) {
+        _panelFieldDiagnosticLogged = true;
+        var diagQtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
+                         || document.querySelector('input[role="spinbutton"]')
+                         || document.querySelector('input.ant-input-number-input');
+        var diagUcInput = document.querySelector('input[data-testid="unitCost"], input#unitCost');
+        _log.push('🔍 DIAGNOSTIC (panel for "' + searchName + '"): quantity spinbutton in side panel = ' +
+          (diagQtyInput ? ('FOUND (value="' + diagQtyInput.value + '", data-testid="' + diagQtyInput.getAttribute('data-testid') + '")') : 'NOT FOUND'));
+        _log.push('🔍 DIAGNOSTIC (panel for "' + searchName + '"): unit cost input in side panel = ' +
+          (diagUcInput ? ('FOUND (value="' + diagUcInput.value + '")') : 'NOT FOUND'));
       }
 
       // Step 4: Find + write the description textarea, if one was given
