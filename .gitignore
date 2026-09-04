@@ -4,3 +4,4 @@ lib/*
 *.zip
 extension_key.pem
 .claude/
+.backups/
