@@ -226,7 +226,8 @@ async function selectTab(tab) {
         // Reorder estimate groups by calling BT's own internal React handler
         var reorderResult = await chrome.scripting.executeScript({
           target: { tabId: tab.id }, world: 'MAIN',
-          func: async function () {
+          args: [pendingCustomItems.map(function (i) { return i.name; })],
+          func: async function (customItemTitles) {
             var DESIRED = [
               'Base House Pricing',
               'Selection Allowances',
@@ -284,44 +285,56 @@ async function selectTab(tab) {
               catch (eJ) { diag.push('first group could not be JSON-stringified: ' + eJ.message); }
             }
 
-            // ── Move any Sewer/Water site-allowance items sitting under the
-            // wrong group into "Site Allowances" directly in this same
-            // state update, bypassing the unreliable dropdown UI entirely.
-            var SITE_ITEM_TITLES = [
-              'Sewer - City (No Septic)', 'Sewer - Conventional Septic', 'Sewer - Engineered Septic',
-              'Water - Well'
-            ];
+            // ── Move any items sitting under the wrong group into the
+            // group they actually belong to, directly in this same state
+            // update — bypassing the unreliable dropdown/panel UI entirely
+            // (same trick, reused for two different item sets below).
             var moves = [];
-            if (itemsKey) {
-              var siteIdx = groups.findIndex(function (g) { return norm(g.title) === norm('Site Allowances'); });
-              if (siteIdx === -1) {
-                diag.push('"Site Allowances" group not found by title — cannot move anything into it');
-              } else {
-                var newSiteItems = groups[siteIdx][itemsKey].slice();
-                for (var gi = 0; gi < groups.length; gi++) {
-                  if (gi === siteIdx) continue;
-                  var arr = groups[gi][itemsKey];
-                  if (!Array.isArray(arr) || !arr.length) continue;
-                  var keep = [];
-                  for (var ii = 0; ii < arr.length; ii++) {
-                    var it = arr[ii];
-                    var itTitle = (it.title || it.name || it.itemTitle || '').trim();
-                    if (SITE_ITEM_TITLES.indexOf(itTitle) !== -1) {
-                      newSiteItems.push(it);
-                      moves.push(itTitle + ': "' + groups[gi].title + '" → "Site Allowances"');
-                    } else {
-                      keep.push(it);
-                    }
-                  }
-                  if (keep.length !== arr.length) {
-                    groups[gi] = Object.assign({}, groups[gi]);
-                    groups[gi][itemsKey] = keep;
+            function moveItemsIntoGroup(titles, targetGroupTitle) {
+              if (!itemsKey || !titles || !titles.length) return;
+              var targetIdx = groups.findIndex(function (g) { return norm(g.title) === norm(targetGroupTitle); });
+              if (targetIdx === -1) {
+                diag.push('"' + targetGroupTitle + '" group not found by title — cannot move anything into it');
+                return;
+              }
+              var wantedTitles = titles.map(function (t) { return norm(t); });
+              var newTargetItems = groups[targetIdx][itemsKey].slice();
+              for (var gi = 0; gi < groups.length; gi++) {
+                if (gi === targetIdx) continue;
+                var arr = groups[gi][itemsKey];
+                if (!Array.isArray(arr) || !arr.length) continue;
+                var keep = [];
+                for (var ii = 0; ii < arr.length; ii++) {
+                  var it = arr[ii];
+                  var itTitle = (it.title || it.name || it.itemTitle || '').trim();
+                  if (wantedTitles.indexOf(norm(itTitle)) !== -1) {
+                    newTargetItems.push(it);
+                    moves.push(itTitle + ': "' + groups[gi].title + '" → "' + targetGroupTitle + '"');
+                  } else {
+                    keep.push(it);
                   }
                 }
-                groups[siteIdx] = Object.assign({}, groups[siteIdx]);
-                groups[siteIdx][itemsKey] = newSiteItems;
+                if (keep.length !== arr.length) {
+                  groups[gi] = Object.assign({}, groups[gi]);
+                  groups[gi][itemsKey] = keep;
+                }
               }
+              groups[targetIdx] = Object.assign({}, groups[targetIdx]);
+              groups[targetIdx][itemsKey] = newTargetItems;
             }
+
+            // Sewer/Water site options — createSiteItem's own parentId field
+            // never reliably appears during creation (see comment there).
+            moveItemsIntoGroup([
+              'Sewer - City (No Septic)', 'Sewer - Conventional Septic', 'Sewer - Engineered Septic',
+              'Water - Well'
+            ], 'Site Allowances');
+
+            // This write's own custom allowance items (editGroupPlaceHolder/
+            // createLineItem) — titles are whatever the user typed, passed in
+            // from tabpicker.js's pendingCustomItems, not a fixed list like
+            // the site options above.
+            moveItemsIntoGroup(customItemTitles, 'Custom Selection Allowances');
 
             // Pull DESIRED groups to front, keep rest in original relative order
             var ordered = [];
@@ -401,6 +414,42 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
     // is enough to double retry-loop budgets too (same iteration count, each
     // iteration just takes twice as long), so no loop counts need to change.
     var _delay = function (ms) { return new Promise(function (r) { setTimeout(r, slowConnection ? ms * 2 : ms); }); };
+
+    // One-shot diagnostic — fires the first time ANY title/cost/markup
+    // field search fails, even after widened waits. If BuilderTrend's UI
+    // genuinely changed (new popup/modal, renamed data-testid attributes),
+    // widening a wait can never fix it — this dumps what's ACTUALLY on the
+    // page right now so the real selectors can be identified from real
+    // data, same approach that found the parent-group/cost-code bugs
+    // earlier. Logged once so it doesn't repeat for every failed item.
+    var _uiShapeDiagnosticLogged = false;
+    function logUiShapeDiagnosticOnce(context) {
+      if (_uiShapeDiagnosticLogged) return;
+      _uiShapeDiagnosticLogged = true;
+      try {
+        var modalLike = document.querySelectorAll('.ant-modal, [role="dialog"], .ant-drawer, .ant-drawer-content');
+        _log.push('🔍 UI DIAGNOSTIC (' + context + '): modal/dialog/drawer-like containers found = ' + modalLike.length);
+        for (var m = 0; m < Math.min(modalLike.length, 3); m++) {
+          _log.push('🔍 UI DIAGNOSTIC[' + m + '] tag=' + modalLike[m].tagName + ' class="' + modalLike[m].className + '"');
+          _log.push('🔍 UI DIAGNOSTIC[' + m + '] outerHTML (first 1200 chars): ' + modalLike[m].outerHTML.slice(0, 1200));
+        }
+        // Not just input[] — the title field is a <textarea>, which is
+        // exactly the tag-restriction bug that caused the original problem
+        // this diagnostic exists to catch. No tag restriction this time.
+        var fuzzy = document.querySelectorAll(
+          '[data-testid*="itle" i], [data-testid*="ost" i], [data-testid*="arkup" i], [data-testid*="uantity" i], ' +
+          '[id*="itle" i], [id*="ost" i]'
+        );
+        _log.push('🔍 UI DIAGNOSTIC (' + context + '): fuzzy title/cost/markup/quantity fields found anywhere on page (any tag) = ' + fuzzy.length);
+        var seen = [];
+        for (var f = 0; f < fuzzy.length; f++) {
+          seen.push('id="' + fuzzy[f].id + '" data-testid="' + (fuzzy[f].getAttribute('data-testid') || '') + '" value="' + fuzzy[f].value + '" visible=' + !!fuzzy[f].offsetHeight);
+        }
+        _log.push('🔍 UI DIAGNOSTIC fuzzy input list: ' + (seen.length ? seen.join(' | ') : '(none found at all)'));
+      } catch (eDiag) {
+        _log.push('🔍 UI DIAGNOSTIC failed: ' + eDiag.message);
+      }
+    }
 
     function reactSet(input, val) {
       var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -552,6 +601,122 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       return true;
     }
 
+    // BuilderTrend replaced its old modal/drawer item editor with ONE
+    // unified panel (.bui-splitview-panel > div.WorksheetDetailPanel) used
+    // for every scenario — editing an existing item, editing a Place
+    // Holder, and creating a new item (custom or site) all open this same
+    // panel, just pre-filled differently. All its fields are FLAT ids, not
+    // namespaced per-row like the old "formatItems[4].items[0].unitCost"
+    // pattern createLineItem/createSiteItem used to rely on. Confirmed live
+    // (2026-09-11):
+    //   title       <textarea id/data-testid/name="itemTitle">  (NOT input — this
+    //               alone broke every old input[data-testid="itemTitle"] selector)
+    //   cost code   input#costCodeId          (ant-select search input)
+    //   parent grp  input#parentId            (ant-select search input; picking a
+    //               cost code does NOT set this — it's independent)
+    //   quantity    input[data-testid="quantity"] (no id)
+    //   unit cost   input#unitCost / [data-testid="unitCost"]
+    //   markup      input#markupValue / [data-testid="Markup.markupPercent"]
+    //   description input#description / [data-testid="description"]
+    //   save button button[data-testid="lineitemdetails-panel-save"] — a real,
+    //               directly-clickable button. Replaces the old "click near the
+    //               sidebar to trigger a dirty-tracking popup, then click
+    //               [data-testid=dirtyTrackingSave]" two-step hack entirely.
+    //
+    // fields: { title, description, costCode, parentGroup, quantity, unitCost, markupPercent }
+    // — pass only the ones you want to set; each is independently optional.
+    async function fillPanelFields(fields, contextLabel) {
+      var ns = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+
+      async function pickAntSelect(el, text, label) {
+        var wrap = el.closest('.ant-select') || el.parentElement;
+        if (wrap) { wrap.click(); await _delay(300); }
+        el.focus(); await _delay(100);
+        ns.call(el, text);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        await _delay(900);
+        var opts = document.querySelectorAll('.ant-select-item-option-content');
+        var opt = null;
+        for (var i = 0; i < opts.length; i++) {
+          if ((opts[i].textContent || '').trim() === text) { opt = opts[i]; break; }
+        }
+        if (opt) {
+          opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          opt.click();
+          await _delay(400);
+          return true;
+        }
+        _log.push('⚠ ' + contextLabel + ': "' + text + '" option not found for ' + label + ' — continuing');
+        return false;
+      }
+
+      if (fields.title !== undefined && fields.title !== null) {
+        var titleEl = document.getElementById('itemTitle') || document.querySelector('[data-testid="itemTitle"]');
+        if (titleEl) { writeReactValue(titleEl, fields.title); await _delay(250); }
+        else { _log.push('⚠ ' + contextLabel + ': title field not found'); logUiShapeDiagnosticOnce(contextLabel + ' title'); }
+      }
+
+      if (fields.costCode) {
+        var ccEl = document.getElementById('costCodeId');
+        if (ccEl) { await pickAntSelect(ccEl, fields.costCode, 'cost code'); }
+        else { _log.push('⚠ ' + contextLabel + ': cost code field not found'); }
+      }
+
+      if (fields.parentGroup) {
+        var pgEl = document.getElementById('parentId');
+        if (pgEl) {
+          var pgWrap = pgEl.closest('.ant-select') || pgEl.parentElement;
+          var pgAlready = pgWrap && pgWrap.querySelector('.ant-select-selection-item');
+          var pgAlreadyText = pgAlready ? (pgAlready.textContent || '').trim() : '';
+          if (pgAlreadyText === fields.parentGroup) {
+            _log.push('✓ ' + contextLabel + ': parent group already "' + fields.parentGroup + '" — leaving as-is');
+          } else {
+            await pickAntSelect(pgEl, fields.parentGroup, 'parent group');
+          }
+        } else {
+          _log.push('⚠ ' + contextLabel + ': parent group field not found');
+        }
+      }
+
+      if (fields.quantity !== undefined && fields.quantity !== null) {
+        var qtyEl = document.querySelector('input[data-testid="quantity"]') || document.querySelector('input[name="quantity"]');
+        if (qtyEl) { await typeNumericValue(qtyEl, fields.quantity); }
+        else { _log.push('⚠ ' + contextLabel + ': quantity field not found'); logUiShapeDiagnosticOnce(contextLabel + ' quantity'); }
+      }
+
+      if (fields.unitCost !== undefined && fields.unitCost !== null) {
+        var ucEl = document.getElementById('unitCost') || document.querySelector('input[data-testid="unitCost"]');
+        if (ucEl) { await typeNumericValue(ucEl, parseFloat(fields.unitCost)); }
+        else { _log.push('⚠ ' + contextLabel + ': unit cost field not found'); logUiShapeDiagnosticOnce(contextLabel + ' unit cost'); }
+      }
+
+      if (fields.description) {
+        var descEl = document.getElementById('description') || document.querySelector('[data-testid="description"]');
+        if (descEl) { writeReactValue(descEl, fields.description); await _delay(200); }
+        else { _log.push('⚠ ' + contextLabel + ': description field not found'); }
+      }
+
+      if (fields.markupPercent !== null && fields.markupPercent !== undefined) {
+        await trySetMarkupPercent(fields.markupPercent, contextLabel);
+      }
+
+      var saveBtn = null;
+      for (var s = 0; s < 20; s++) {
+        saveBtn = document.querySelector('button[data-testid="lineitemdetails-panel-save"]');
+        if (saveBtn) break;
+        await _delay(150);
+      }
+      if (saveBtn) {
+        saveBtn.click();
+        await _delay(900);
+        return true;
+      }
+      _log.push('⚠ ' + contextLabel + ': save button not found — changes may not have persisted');
+      logUiShapeDiagnosticOnce(contextLabel + ' save button');
+      return false;
+    }
+
     function findWorksheetSearchBar() {
       var collapseBtn = Array.from(document.querySelectorAll('button')).find(function(b) {
         return (b.textContent || '').includes('Collapse all');
@@ -565,147 +730,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         }
       }
       return document.getElementById('rc_select_17') || document.getElementById('rc_select_1') || null;
-    }
-
-    function waitForModalClose(maxWaitMs) {
-      maxWaitMs = maxWaitMs || 2000;
-      if (slowConnection) maxWaitMs *= 2;
-      return new Promise(function (resolve) {
-        var startWait = performance.now();
-        var checkInterval = setInterval(function () {
-          var modal = document.querySelector('.ant-modal-wrap, .ant-modal-root, [class*="modal"][class*="show"]');
-          var elapsed = performance.now() - startWait;
-          if (!modal || elapsed >= maxWaitMs) { clearInterval(checkInterval); resolve(elapsed); }
-        }, 50);
-      });
-    }
-
-    async function setQty(name, qty, isUnitCost) {
-      var needle = name.toLowerCase();
-      var words = needle.split(/\s+/).filter(Boolean);
-      var startTime = performance.now();
-
-      var si = null;
-      for (var wi = 0; wi < 20; wi++) {
-        si = document.getElementById('rc_select_17');
-        if (!si) si = document.getElementById('rc_select_1');
-        if (!si) {
-          var collapseBtn = Array.from(document.querySelectorAll('button')).find(function (btn) {
-            return btn.textContent && btn.textContent.includes('Collapse all');
-          });
-          if (collapseBtn) {
-            var parent = collapseBtn.closest('[class*="header"], [class*="control"], div');
-            if (parent) si = parent.querySelector('input[role="combobox"].ant-select-selection-search-input');
-          }
-        }
-        if (!si) {
-          var candidates = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-          candidates = candidates.filter(function (el) {
-            var id = el.id || '';
-            return id && id.startsWith('rc_select_') && id !== 'rc_select_0' && id !== 'savedFilterDropdown' && !id.match(/^\d+$/);
-          });
-          si = candidates[0];
-        }
-        if (si) break;
-        await _delay(100);
-      }
-      if (!si) { _log.push('✗ ' + name + ' — search bar not found'); return; }
-
-      var container = si.closest('.ant-select-selector') || si.parentElement;
-      if (container) { container.click(); await _delay(200); }
-      si.focus();
-      await _delay(100);
-
-      var nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      nativeSetter.call(si, name);
-      si.dispatchEvent(new Event('input', { bubbles: true }));
-      si.dispatchEvent(new Event('change', { bubbles: true }));
-      await _delay(500);
-
-      var opts = document.querySelectorAll('.LineItemResult.LineItem');
-      var clicked = false;
-      for (var o = 0; o < opts.length; o++) {
-        var optTxt = (opts[o].innerText || '').trim().toLowerCase();
-        if (words.every(function (w) { return optTxt.includes(w); })) {
-          opts[o].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          opts[o].dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-          opts[o].click();
-          clicked = true;
-          break;
-        }
-      }
-      if (!clicked) { _log.push('○ ' + name + ' — not in dropdown'); return; }
-
-      function isInGroupHeader(node) {
-        var ownCls = node.className || '';
-        if (ownCls.includes('proposalFormatGroupCellTitle') || ownCls.includes('proposalFormatGroupCellTitleReadonly')) return true;
-        var n = node.parentElement;
-        while (n && n !== document.body) {
-          var cc = n.className || '';
-          if (cc.includes('WorksheetGroupCellActions') || cc.includes('proposalFormatGroupCell')) return true;
-          n = n.parentElement;
-        }
-        return false;
-      }
-
-      function findValueDisplay() {
-        var vds = document.querySelectorAll('.ValueDisplay');
-        for (var v = 0; v < vds.length; v++) {
-          if (!vds[v].offsetHeight || isInGroupHeader(vds[v])) continue;
-          if ((vds[v].innerText || '').trim().toLowerCase() === needle) return vds[v];
-        }
-        for (var v2 = 0; v2 < vds.length; v2++) {
-          if (!vds[v2].offsetHeight || isInGroupHeader(vds[v2])) continue;
-          var t = (vds[v2].innerText || '').trim().toLowerCase();
-          if (words.every(function (w) { return t.includes(w); })) return vds[v2];
-        }
-        return null;
-      }
-
-      var el = null;
-      for (var attempt = 0; attempt < 15; attempt++) {
-        el = findValueDisplay();
-        if (el) break;
-        await _delay(100);
-      }
-      if (!el) { _log.push('○ ' + name + ' — ValueDisplay not found'); return; }
-
-      el.scrollIntoView({ behavior: 'instant', block: 'center' });
-      await _delay(300);
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      el.click();
-      await _delay(400);
-
-      var qtyInput = null;
-      if (isUnitCost) qtyInput = document.querySelector('input[data-testid="unitCost"], input#unitCost');
-      if (!qtyInput) {
-        qtyInput = document.querySelector('input[role="spinbutton"].ant-input-number-input')
-          || document.querySelector('input[role="spinbutton"]')
-          || document.querySelector('input.ant-input-number-input');
-      }
-      if (!qtyInput) { _log.push('○ ' + name + ' — qty input not found'); return; }
-
-      await typeNumericValue(qtyInput, qty);
-
-      var saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
-      if (!saveBtn) {
-        for (var s = 0; s < 15; s++) {
-          await _delay(100);
-          saveBtn = document.querySelector('[data-testid="saveButton"], #saveButton');
-          if (saveBtn) break;
-        }
-      }
-      if (saveBtn) {
-        saveBtn.click();
-        await waitForModalClose(2000);
-      } else {
-        qtyInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-        await _delay(500);
-      }
-
-      var totalTime = performance.now() - startTime;
-      _log.push('✓ ' + name + ' → ' + qty + (isUnitCost ? ' (unit cost)' : ' (qty)') + ' (' + totalTime.toFixed(0) + 'ms)');
     }
 
     async function createLineItem(title, unitCost, description, markupPercent) {
@@ -772,7 +796,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       await _delay(300);
 
       // ── Step 3: Click + → Item ────────────────────────────────────────────
-      var existingIds = new Set(Array.from(document.querySelectorAll('[data-testid*="itemTitle"]')).map(function(e){ return e.id; }));
       plusBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
       plusBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
       plusBtn.click();
@@ -801,162 +824,35 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await _delay(600);
       }
 
-      // ── Step 4: Find the newly-added title input ──────────────────────────
-      // The new row has class "editing" on the <tr> (confirmed from OuterHTML).
-      // Find the title input inside any editing row, or fall back to any new itemTitle input.
+      // ── Step 4: Wait for the panel's title field to appear ─────────────────
+      // Title is now a single flat <textarea id="itemTitle">, reused for
+      // every open/close, not a uniquely-numbered per-row element — the old
+      // "diff against a pre-open snapshot of itemTitle elements" approach
+      // above this always failed after the first item, since the id never
+      // changes for the snapshot to differ against. Just wait for it directly.
       var newTitleEl = null;
       for (var a=0; a<30; a++) {
-        // Primary: find input inside a tr.editing row
-        var editingRow = document.querySelector('tr.editing');
-        if (editingRow) {
-          newTitleEl = editingRow.querySelector('input[id*="itemTitle"], [data-testid*="itemTitle"]');
-          if (newTitleEl) break;
-        }
-        // Fallback: any itemTitle input not in our pre-existing set
-        var allTitles = document.querySelectorAll('[data-testid*="itemTitle"], input[id*="itemTitle"]');
-        for (var tt=0; tt<allTitles.length; tt++) {
-          if (!existingIds.has(allTitles[tt].id)) { newTitleEl = allTitles[tt]; break; }
-        }
+        newTitleEl = document.getElementById('itemTitle') || document.querySelector('[data-testid="itemTitle"]');
         if (newTitleEl) break;
         await _delay(150);
       }
-      if (!newTitleEl) { _log.push('✗ createLineItem: new title input not found'); return; }
+      if (!newTitleEl) { _log.push('✗ createLineItem: new title input not found'); logUiShapeDiagnosticOnce('createLineItem new title'); return; }
 
-      // Fill title
+      // Everything else — title, description, cost code, parent group, unit
+      // cost, markup — lives in the same one panel this new row just opened
+      // (confirmed live 2026-09-11: flat ids, not the old namespaced
+      // "formatItems[4].items[0].unitCost" pattern), so one call fills
+      // every field and saves once via the real save button.
       newTitleEl.scrollIntoView({ behavior:'instant', block:'center' });
-      writeReactValue(newTitleEl, title);
-      await _delay(300);
-
-      // ── Step 4.5: Description (optional) ──────────────────────────────────
-      // Confirmed via real outerHTML: the description field is a flat,
-      // non-namespaced <textarea id="description" name="description"
-      // data-testid="description">, NOT scoped per-row like costCodeId/
-      // parentId. Poll for it directly — no click-to-reveal needed, no
-      // keyBase guessing, just wait for React to render it.
-      if (description) {
-        _log.push('  └ Writing description: "' + description + '"…');
-        var descArea = null;
-        for (var da = 0; da < 30; da++) {
-          descArea = document.getElementById('description')
-                  || document.querySelector('textarea[data-testid="description"]')
-                  || document.querySelector('textarea[name="description"]');
-          if (descArea) break;
-          await _delay(150);
-        }
-        if (descArea) {
-          descArea.scrollIntoView({ behavior:'instant', block:'center' });
-          writeReactValue(descArea, description);
-          await _delay(250);
-          _log.push('  ✓ Description filled into textarea');
-        } else {
-          _log.push('⚠ createLineItem: description textarea not found — continuing');
-        }
-      }
-
-      // ── Step 5: Cost code — type & pick "Custom Selection Allowances" ─────
-      // keyBase e.g. "formatItems[4].items[0]"
-      var keyBase = (newTitleEl.getAttribute('data-testid') || newTitleEl.id || '').replace(/\.itemTitle$/, '');
-      var ccInput = document.querySelector('[id="' + keyBase + '.costCodeId"]');
-      if (ccInput) {
-        // click the select container first so the ant-select opens
-        var ccWrap = ccInput.closest('.ant-select') || ccInput.parentElement;
-        if (ccWrap) { ccWrap.click(); await _delay(300); }
-        ccInput.focus(); await _delay(100);
-        ns.call(ccInput, 'Custom Selection Allowances');
-        ccInput.dispatchEvent(new Event('input',{bubbles:true}));
-        ccInput.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(800);
-        // Pick the dropdown option — matches OuterHTML: <div class="ant-select-item-option-content">Custom Selection Allowances</div>
-        var ccOpt = null;
-        var allCcOpts = document.querySelectorAll('.ant-select-item-option-content');
-        for (var co=0; co<allCcOpts.length; co++) {
-          if ((allCcOpts[co].textContent||'').trim() === 'Custom Selection Allowances') { ccOpt = allCcOpts[co]; break; }
-        }
-        if (ccOpt) {
-          ccOpt.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          ccOpt.click();
-          await _delay(400);
-        } else {
-          _log.push('⚠ createLineItem: cost code option not found — continuing');
-        }
-      }
-
-      // ── Step 5.5: Parent group — set to "Custom Selection Allowances" ───────
-      var pgInput = document.getElementById('parentId');
-      if (pgInput) {
-        var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
-        if (pgWrap) { pgWrap.click(); await _delay(300); }
-        pgInput.focus(); await _delay(100);
-        ns.call(pgInput, 'Custom Selection Allowances');
-        pgInput.dispatchEvent(new Event('input', { bubbles: true }));
-        pgInput.dispatchEvent(new Event('change', { bubbles: true }));
-        await _delay(600);
-        var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
-        var pgOpt = null;
-        for (var po = 0; po < pgOpts.length; po++) {
-          if ((pgOpts[po].textContent || '').trim() === 'Custom Selection Allowances') {
-            pgOpt = pgOpts[po]; break;
-          }
-        }
-        if (pgOpt) {
-          pgOpt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          pgOpt.click();
-          await _delay(400);
-        } else {
-          _log.push('⚠ createLineItem: parent group option not found — continuing');
-        }
-      } else {
-        _log.push('⚠ createLineItem: parentId input not found — continuing');
-      }
-
-      // ── Step 6: Unit cost ─────────────────────────────────────────────────
-      // OuterHTML shows type="text", id & data-testid = keyBase + ".unitCost", value="0.0000"
-      var ucInput = document.querySelector('input[data-testid="' + keyBase + '.unitCost"]')
-                 || document.querySelector('input[id="' + keyBase + '.unitCost"]');
-      if (ucInput) {
-        ucInput.focus(); await _delay(150);
-        if (typeof ucInput.select === 'function') ucInput.select();
-        // clear existing "0.0000" then type the real value
-        ns.call(ucInput, '');
-        ucInput.dispatchEvent(new Event('input',{bubbles:true}));
-        await _delay(50);
-        var valStr = String(Math.round(parseFloat(unitCost) * 100) / 100);
-        ns.call(ucInput, valStr);
-        ucInput.dispatchEvent(new Event('input',{bubbles:true}));
-        ucInput.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(200);
-      } else {
-        _log.push('⚠ createLineItem: unit cost input not found — continuing');
-      }
-
-      await trySetMarkupPercent(markupPercent, 'createLineItem');
-
-      // ── Step 7: First save — click off to the left of the estimate to trigger
-      // the dirty-tracking prompt ────────────────────────────────────────────
-      var sideEl = document.querySelector('.ant-layout-sider, aside');
-      var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
-      var saveY = window.innerHeight / 2;
-      var saveTarget = document.elementFromPoint(saveX, saveY) || document.body;
-      saveTarget.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(150);
-      saveTarget.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(900);
-
-      // ── Step 8: Second save — click the Save button on the dirty-tracking
-      // popup. Without this, clicking off alone no longer persists the item —
-      // the next createLineItem call's typing (search bar / cost code) can
-      // then wipe out the still-unsaved row. Same pattern as editExistingItem
-      // and editGroupPlaceHolder ─────────────────────────────────────────────
-      var dirtySaveCreate = null;
-      for (var dsc = 0; dsc < 15; dsc++) {
-        dirtySaveCreate = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveCreate) break;
-        await _delay(150);
-      }
-      if (dirtySaveCreate) {
-        dirtySaveCreate.click();
-        await _delay(800);
-      }
+      await _delay(200);
+      await fillPanelFields({
+        title: title,
+        description: description || null,
+        costCode: 'Custom Selection Allowances',
+        parentGroup: 'Custom Selection Allowances',
+        unitCost: unitCost,
+        markupPercent: markupPercent
+      }, 'createLineItem');
 
       _log.push('✓ Created: ' + title + ' → $' + unitCost);
     }
@@ -1011,7 +907,6 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       await _delay(300);
 
       // Step 3: Click + → Item — same as createLineItem
-      var siExistingIds = new Set(Array.from(document.querySelectorAll('[data-testid*="itemTitle"]')).map(function(e){ return e.id; }));
       plusBtn.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
       plusBtn.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
       plusBtn.click();
@@ -1038,33 +933,28 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         si.dispatchEvent(new Event('change',{bubbles:true}));
         await _delay(600);
       }
+      // Title is a single flat <textarea id="itemTitle">, reused for every
+      // open/close — not a uniquely-numbered per-row element, so (like
+      // createLineItem) just wait for it directly instead of diffing
+      // against a pre-open snapshot that never actually changes.
       var newTitleEl = null;
-      for (var tat=0; tat<30; tat++) {
-        var editRow = document.querySelector('tr.editing');
-        if (editRow) {
-          newTitleEl = editRow.querySelector('input[id*="itemTitle"], [data-testid*="itemTitle"]');
-          if (newTitleEl) break;
-        }
-        var allTitleInps = document.querySelectorAll('[data-testid*="itemTitle"], input[id*="itemTitle"]');
-        for (var tt=0; tt<allTitleInps.length; tt++) {
-          if (!siExistingIds.has(allTitleInps[tt].id)) { newTitleEl = allTitleInps[tt]; break; }
-        }
+      for (var tat=0; tat<70; tat++) {
+        newTitleEl = document.getElementById('itemTitle') || document.querySelector('[data-testid="itemTitle"]');
         if (newTitleEl) break;
         await _delay(150);
       }
-      if (!newTitleEl) { _log.push('✗ createSiteItem: title input not found'); return; }
+      if (!newTitleEl) { _log.push('✗ createSiteItem: title input not found'); logUiShapeDiagnosticOnce('createSiteItem title'); return; }
 
       newTitleEl.scrollIntoView({ behavior:'instant', block:'center' });
-      newTitleEl.focus(); await _delay(150);
-      ns.call(newTitleEl, title);
-      newTitleEl.dispatchEvent(new Event('input',{bubbles:true}));
-      newTitleEl.dispatchEvent(new Event('change',{bubbles:true}));
-      await _delay(300);
+      await _delay(200);
 
       // Step 5: Cost code — type the parent group name (e.g. "06 - Municipal Tap Fees") to
-      // find the matching cost code, which also makes the parentId field appear in the form.
-      var keyBase = (newTitleEl.getAttribute('data-testid') || newTitleEl.id || '').replace(/\.itemTitle$/, '');
-      var ccInput = document.querySelector('[id="' + keyBase + '.costCodeId"]');
+      // find the matching cost code. Cost code field is flat (id="costCodeId"),
+      // not namespaced per-row like the old UI — confirmed live 2026-09-11.
+      // Kept as its own inline block (not fillPanelFields) because of the
+      // fallback-to-"09 - Lot Clearing" behavior below, which fillPanelFields
+      // doesn't support.
+      var ccInput = document.getElementById('costCodeId');
       if (ccInput) {
         var ccWrap = ccInput.closest('.ant-select') || ccInput.parentElement;
         if (ccWrap) { ccWrap.click(); await _delay(400); }
@@ -1106,105 +996,21 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
           _log.push('✓ createSiteItem: cost code set to "' + ccOpt.textContent.trim() + '"' + (ccOpt.textContent.trim() !== parentGroup ? ' (⚠ intended "' + parentGroup + '" — fallback was used)' : ''));
         } else { _log.push('⚠ createSiteItem: cost code option not found — continuing'); }
       } else {
-        _log.push('⚠ createSiteItem: cost code input not found (keyBase=' + keyBase + ')');
+        _log.push('⚠ createSiteItem: cost code input not found');
       }
 
-      // Step 6: Unit cost — pulled from SITE OPTIONS sheet column C
-      if (unitCost && parseFloat(unitCost) > 0) {
-        var ucInput = document.querySelector('[data-testid="' + keyBase + '.unitCost"]')
-                   || document.querySelector('[id="' + keyBase + '.unitCost"]');
-        if (ucInput) {
-          ucInput.focus(); await _delay(150);
-          ucInput.select();
-          ns.call(ucInput, '');
-          ucInput.dispatchEvent(new Event('input',{bubbles:true}));
-          await _delay(50);
-          var siUcValStr = String(Math.round(parseFloat(unitCost) * 100) / 100);
-          ns.call(ucInput, siUcValStr);
-          ucInput.dispatchEvent(new Event('input',{bubbles:true}));
-          ucInput.dispatchEvent(new Event('change',{bubbles:true}));
-          await _delay(200);
-        } else {
-          _log.push('⚠ createSiteItem: unit cost input not found — continuing');
-        }
-      }
+      // Title, parent group (the real "Site Allowances" category — cost
+      // code selection does NOT set this on its own, confirmed live),
+      // unit cost, and markup all live in the same panel; fill them and
+      // save once via the real save button.
+      await fillPanelFields({
+        title: title,
+        parentGroup: 'Site Allowances',
+        unitCost: (unitCost && parseFloat(unitCost) > 0) ? unitCost : null,
+        markupPercent: markupPercent
+      }, 'createSiteItem');
 
-      await trySetMarkupPercent(markupPercent, 'createSiteItem');
-
-      // Step 6.5: Parent group — tried right after cost code before, but the
-      // parentId field never appeared even after a 10s wait, every time.
-      // Trying again now, after cost code AND unit cost AND markup are all
-      // filled in, in case the field only renders once more of the form is
-      // complete — same still-open creation panel, nothing reopened.
-      var pgInput = null;
-      for (var pgwait=0; pgwait<50; pgwait++) {
-        pgInput = document.getElementById('parentId');
-        if (pgInput) break;
-        await _delay(200);
-      }
-      if (pgInput) {
-        var pgWrap = pgInput.closest('.ant-select') || pgInput.parentElement;
-        // "parentGroup" here is actually a COST CODE string (e.g.
-        // "11 - Septic / Sewer"), not a real parent-group category name like
-        // "Site Allowances" — see SITE_DROPDOWN_MAP on the webpage. Selecting
-        // that cost code in Step 5 may already auto-fill this field with the
-        // correct category on its own. Only touch it if it's genuinely
-        // still empty; never clear/retype over an existing selection.
-        var pgAlreadySet = pgWrap && pgWrap.querySelector('.ant-select-selection-item');
-        if (pgAlreadySet && (pgAlreadySet.textContent || '').trim()) {
-          _log.push('✓ createSiteItem: parent group already set to "' + pgAlreadySet.textContent.trim() + '" via cost code — leaving as-is');
-        } else {
-          pgWrap && pgWrap.click(); await _delay(400);
-          pgInput.focus(); await _delay(200);
-          document.execCommand('selectAll', false, null);
-          document.execCommand('delete', false, null);
-          await _delay(100);
-          document.execCommand('insertText', false, 'Site Allowances');
-          await _delay(1000);
-          var pgOpts = document.querySelectorAll('.ant-select-item-option-content');
-          var pgOpt = null;
-          for (var po=0; po<pgOpts.length; po++) {
-            if ((pgOpts[po].textContent||'').trim() === 'Site Allowances') { pgOpt = pgOpts[po]; break; }
-          }
-          if (pgOpt) {
-            var pgOptParent = pgOpt.closest('.ant-select-item-option') || pgOpt.parentElement;
-            pgOptParent.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));
-            await _delay(80);
-            pgOptParent.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true}));
-            pgOptParent.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-            await _delay(500);
-            _log.push('✓ createSiteItem: parent group set to "Site Allowances"');
-          } else { _log.push('⚠ createSiteItem: parent group "Site Allowances" option not found — continuing'); }
-        }
-      } else {
-        _log.push('⚠ createSiteItem: parentId input still not found after cost code + unit cost + markup — continuing');
-      }
-
-      // Step 7: First save — click off to the sidebar to trigger the
-      // dirty-tracking prompt
-      var sideEl = document.querySelector('.ant-layout-sider, aside');
-      var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
-      var saveY = window.innerHeight / 2;
-      var saveTarget = document.elementFromPoint(saveX, saveY) || document.body;
-      saveTarget.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(150);
-      saveTarget.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(900);
-
-      // Step 8: Second save — click the Save button on the dirty-tracking
-      // popup, same as editExistingItem/editGroupPlaceHolder
-      var dirtySaveSite = null;
-      for (var dss = 0; dss < 15; dss++) {
-        dirtySaveSite = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveSite) break;
-        await _delay(150);
-      }
-      if (dirtySaveSite) {
-        dirtySaveSite.click();
-        await _delay(800);
-      }
-
-      _log.push('✓ Site item: ' + title + ' → ' + parentGroup + (unitCost ? ' → $' + unitCost : ''));
+      _log.push('✓ Site item: ' + title + ' → Site Allowances' + (unitCost ? ' → $' + unitCost : ''));
     }
 
     // Build lookup: existingLine name → siteOption (for items that edit in place)
@@ -1284,230 +1090,21 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
         await _delay(400);
       } else { _log.push('⚠ editExistingItem: title ValueDisplay not found for ' + searchName); }
 
-      var titleInp = null;
-      for (var tii=0; tii<15; tii++) {
-        titleInp = document.querySelector('input[data-testid="itemTitle"]');
-        if (titleInp) break;
-        await _delay(100);
-      }
-      if (titleInp) {
-        titleInp.focus();
-        document.execCommand('selectAll', false, null);
-        document.execCommand('delete', false, null);
-        document.execCommand('insertText', false, newTitle);
-        await _delay(300);
-      } else { _log.push('⚠ editExistingItem: title input did not appear for ' + searchName); }
-
-      // Step 4: Click unit cost cell in same row → set cost
-      var costCell = targetRow.querySelector('td[data-testid="cell-unitCost"] .ValueDisplay') ||
-                     targetRow.querySelector('td[data-testid="cell-unitCost"]');
-      if (costCell) {
-        costCell.click();
-        await _delay(400);
-        var costInp = null;
-        for (var cii=0; cii<15; cii++) {
-          costInp = document.querySelector('input[data-testid="unitCost"]');
-          if (costInp) break;
-          await _delay(100);
-        }
-        if (costInp) {
-          costInp.focus();
-          document.execCommand('selectAll', false, null);
-          document.execCommand('delete', false, null);
-          document.execCommand('insertText', false, String(unitCost));
-          await _delay(300);
-        } else { _log.push('⚠ editExistingItem: cost input did not appear for ' + searchName); }
-      } else { _log.push('⚠ editExistingItem: cost cell not found for ' + searchName); }
-
-      // Step 4.5: Allowance-tier description (Group B upgrade note). Same
-      // flat, non-namespaced textarea createLineItem's Step 4.5 already
-      // uses (confirmed via real outerHTML there — description is NOT
-      // scoped per-row like costCodeId/parentId, unlike the title/cost
-      // fields). Good tier passes no description, so this is skipped
-      // entirely in that case.
-      if (description) {
-        _log.push('  └ Writing description: "' + description + '"…');
-        var descAreaE = null;
-        for (var daE = 0; daE < 30; daE++) {
-          descAreaE = document.getElementById('description')
-                   || document.querySelector('textarea[data-testid="description"]')
-                   || document.querySelector('textarea[name="description"]');
-          if (descAreaE) break;
-          await _delay(150);
-        }
-        if (descAreaE) {
-          descAreaE.scrollIntoView({ behavior: 'instant', block: 'center' });
-          writeReactValue(descAreaE, description);
-          await _delay(250);
-          _log.push('  ✓ Description filled into textarea');
-        } else {
-          _log.push('⚠ editExistingItem: description textarea not found for ' + searchName);
-        }
-      }
-
-      await trySetMarkupPercent(markupPercent, 'editExistingItem: ' + searchName);
-
-      // Step 4: First save — coordinate click to trigger dirty-tracking prompt
-      var sideEl = document.querySelector('.ant-layout-sider, aside');
-      var saveX = sideEl ? sideEl.getBoundingClientRect().right + 5 : 10;
-      var saveY = window.innerHeight / 2;
-      var saveTarget = document.elementFromPoint(saveX, saveY) || document.body;
-      saveTarget.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(150);
-      saveTarget.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveX,clientY:saveY}));
-      await _delay(900);
-
-      // Step 5: Second save — click the Save button on the dirty-tracking popup
-      var dirtySave = null;
-      for (var ds=0; ds<15; ds++) {
-        dirtySave = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySave) break;
-        await _delay(150);
-      }
-      if (dirtySave) {
-        dirtySave.click();
-        await _delay(800);
-      }
+      // Title, unit cost, description, and markup all live in the same
+      // panel this click just opened (confirmed live 2026-09-11 — title is
+      // now a flat <textarea id="itemTitle">, not the old <input>, which is
+      // why this used to fail even with long waits). One call fills every
+      // field and saves once via the real save button.
+      await fillPanelFields({
+        title: newTitle,
+        unitCost: unitCost,
+        description: description || null,
+        markupPercent: markupPercent
+      }, 'editExistingItem: ' + searchName);
 
       _log.push('✓ editExistingItem: ' + searchName + ' → "' + newTitle + '" $' + unitCost);
     }
 
-    // Group A allowance-tier description writer. setQty() (used for all
-    // Group A quantity edits) only opens a small quantity spinbutton popup
-    // with no description field, so a Better/Best upgrade note needs this
-    // separate pass: search → find the row → click its title ValueDisplay
-    // to open the side panel (same as editExistingItem Step 3, but the
-    // title value itself is never touched/rewritten) → write the
-    // description (flat #description textarea, same as createLineItem and
-    // editExistingItem above) → save.
-    //
-    // ⚠ Unverified against a live BuilderTrend page: this runs immediately
-    // after setQty() has already interacted with a different, smaller
-    // popup on the same row — if descriptions don't land for Group A
-    // items, that timing/interaction sequence is the first thing to check.
-    // Opens an item's edit panel once and writes BOTH the global markup
-    // percent (always, when provided) and an optional tier-upgrade
-    // description in that same panel session — this used to be
-    // setItemDescription(), called only when a description existed;
-    // markup now applies to every item, so this always runs for the
-    // setQty-driven (Group A) branch of the main write loop below.
-    async function setItemMarkupAndDescription(searchName, markupPercent, description) {
-      if (!description && (markupPercent === null || markupPercent === undefined)) return;
-      var nsD = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-
-      // Step 1: Search for item → click LineItemResult to open edit panel
-      var siD = document.getElementById('rc_select_17') || document.getElementById('rc_select_1');
-      if (!siD) {
-        var candsD = Array.from(document.querySelectorAll('input[role="combobox"].ant-select-selection-search-input'));
-        siD = candsD.find(function(el){ var id=el.id||''; return id.startsWith('rc_select_') && id!=='rc_select_0'; });
-      }
-      if (siD) {
-        var contD = siD.closest('.ant-select-selector') || siD.parentElement;
-        if (contD) { contD.click(); await _delay(200); }
-        siD.focus(); await _delay(100);
-        nsD.call(siD, searchName);
-        siD.dispatchEvent(new Event('input',{bubbles:true}));
-        siD.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(900);
-        var dResult = null;
-        var dItems = document.querySelectorAll('.LineItemResult, [class*="LineItem"][class*="Result"]');
-        for (var dli=0; dli<dItems.length; dli++) {
-          if ((dItems[dli].innerText||'').trim().toLowerCase() === searchName.toLowerCase()) { dResult = dItems[dli]; break; }
-        }
-        if (dResult) {
-          dResult.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
-          dResult.click();
-          await _delay(1000);
-        }
-        nsD.call(siD, '');
-        siD.dispatchEvent(new Event('input',{bubbles:true}));
-        siD.dispatchEvent(new Event('change',{bubbles:true}));
-        await _delay(400);
-      }
-
-      // Step 2: Find the exact <b> tag in the table with matching text → click its row to open side panel
-      var targetRowD = null;
-      for (var tdiD=0; tdiD<20; tdiD++) {
-        var bTagsD = document.querySelectorAll('tr.proposalBaseLineItemContainerRow b');
-        for (var tdi2D=0; tdi2D<bTagsD.length; tdi2D++) {
-          if ((bTagsD[tdi2D].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-            targetRowD = bTagsD[tdi2D].closest('tr.proposalBaseLineItemContainerRow');
-            break;
-          }
-        }
-        if (targetRowD) break;
-        await _delay(150);
-      }
-      if (!targetRowD) { _log.push('⚠ setItemMarkupAndDescription: row not found for ' + searchName); return; }
-      targetRowD.click();
-      await _delay(800);
-
-      // Step 3: Click the title ValueDisplay just to open the side panel's
-      // editing context — do NOT write a new title value.
-      var titleDisplayD = null;
-      for (var tddD=0; tddD<15; tddD++) {
-        var tDisplaysD = document.querySelectorAll('.ValueDisplay[data-testid$=".itemTitle"]');
-        for (var tdi3D=0; tdi3D<tDisplaysD.length; tdi3D++) {
-          if ((tDisplaysD[tdi3D].textContent||'').trim().toLowerCase() === searchName.toLowerCase()) {
-            titleDisplayD = tDisplaysD[tdi3D]; break;
-          }
-        }
-        if (titleDisplayD) break;
-        await _delay(100);
-      }
-      if (titleDisplayD) {
-        titleDisplayD.click();
-        await _delay(400);
-      } else {
-        _log.push('⚠ setItemMarkupAndDescription: title ValueDisplay not found for ' + searchName);
-      }
-
-      // Step 4: Find + write the description textarea, if one was given
-      // (no title/cost edits here). A missing textarea doesn't abort the
-      // whole item — markup below still gets a chance to write.
-      if (description) {
-        var descAreaD = null;
-        for (var daD = 0; daD < 30; daD++) {
-          descAreaD = document.getElementById('description')
-                   || document.querySelector('textarea[data-testid="description"]')
-                   || document.querySelector('textarea[name="description"]');
-          if (descAreaD) break;
-          await _delay(150);
-        }
-        if (descAreaD) {
-          descAreaD.scrollIntoView({ behavior: 'instant', block: 'center' });
-          writeReactValue(descAreaD, description);
-          await _delay(250);
-        } else {
-          _log.push('⚠ setItemMarkupAndDescription: description textarea not found for ' + searchName);
-        }
-      }
-
-      await trySetMarkupPercent(markupPercent, 'setItemMarkupAndDescription: ' + searchName);
-
-      // Step 5: Save — same coordinate-click + dirty-tracking-popup pattern as editExistingItem
-      var sideElD = document.querySelector('.ant-layout-sider, aside');
-      var saveXD = sideElD ? sideElD.getBoundingClientRect().right + 5 : 10;
-      var saveYD = window.innerHeight / 2;
-      var saveTargetD = document.elementFromPoint(saveXD, saveYD) || document.body;
-      saveTargetD.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXD,clientY:saveYD}));
-      await _delay(150);
-      saveTargetD.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXD,clientY:saveYD}));
-      await _delay(900);
-
-      var dirtySaveD = null;
-      for (var dsD=0; dsD<15; dsD++) {
-        dirtySaveD = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveD) break;
-        await _delay(150);
-      }
-      if (dirtySaveD) {
-        dirtySaveD.click();
-        await _delay(800);
-      }
-
-      _log.push('✓ setItemMarkupAndDescription: ' + searchName + (markupPercent !== null && markupPercent !== undefined ? ' → markup ' + markupPercent + '%' : '') + (description ? ' → "' + description + '"' : ''));
-    }
 
     // Combines what used to be 3 separate search→open→save round trips
     // (setQty for quantity, setItemMarkupAndDescription for markup, setQty
@@ -1587,77 +1184,21 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       if (titleDisplayC) { titleDisplayC.click(); await _delay(400); }
       else { _log.push('⚠ setQtyMarkupUnitCostCombined: title ValueDisplay not found for ' + name); }
 
-      // Step 4: Quantity — into the unit-cost field instead, if isUnitCostFirst
-      var qtyResult = null;
-      var qtyInputC = isUnitCostFirst
-        ? document.querySelector('input[data-testid="unitCost"], input#unitCost')
-        : (document.querySelector('input[data-testid="quantity"]')
-           || document.querySelector('input[role="spinbutton"].ant-input-number-input')
-           || document.querySelector('input[role="spinbutton"]')
-           || document.querySelector('input.ant-input-number-input'));
-      if (qtyInputC) {
-        await typeNumericValue(qtyInputC, qty);
-        qtyResult = qty;
-      } else {
-        _log.push('⚠ setQtyMarkupUnitCostCombined: ' + (isUnitCostFirst ? 'unit cost' : 'quantity') + ' input not found for ' + name);
-      }
-
-      // Step 5: Description, if given
-      if (description) {
-        var descAreaC = null;
-        for (var daC = 0; daC < 30; daC++) {
-          descAreaC = document.getElementById('description')
-                   || document.querySelector('textarea[data-testid="description"]')
-                   || document.querySelector('textarea[name="description"]');
-          if (descAreaC) break;
-          await _delay(150);
-        }
-        if (descAreaC) {
-          descAreaC.scrollIntoView({ behavior: 'instant', block: 'center' });
-          writeReactValue(descAreaC, description);
-          await _delay(250);
-        } else {
-          _log.push('⚠ setQtyMarkupUnitCostCombined: description textarea not found for ' + name);
-        }
-      }
-
-      // Step 6: Markup
-      await trySetMarkupPercent(markupPercent, 'setQtyMarkupUnitCostCombined: ' + name);
-
-      // Step 7: Unit cost (second, separate value) — only when provided and
-      // not already used as the quantity target above
-      var ucResult = null;
-      if (!isUnitCostFirst && unitCost !== undefined && unitCost !== null) {
-        var ucInputC = document.querySelector('input[data-testid="unitCost"], input#unitCost');
-        if (ucInputC) {
-          await typeNumericValue(ucInputC, parseFloat(unitCost));
-          ucResult = unitCost;
-        } else {
-          _log.push('⚠ setQtyMarkupUnitCostCombined: unit cost input not found for ' + name);
-        }
-      }
-
-      // Step 8: Save — same coordinate-click + dirty-tracking-popup pattern
-      // as setItemMarkupAndDescription/editExistingItem
-      var sideElC = document.querySelector('.ant-layout-sider, aside');
-      var saveXC = sideElC ? sideElC.getBoundingClientRect().right + 5 : 10;
-      var saveYC = window.innerHeight / 2;
-      var saveTargetC = document.elementFromPoint(saveXC, saveYC) || document.body;
-      saveTargetC.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,clientX:saveXC,clientY:saveYC}));
-      await _delay(150);
-      saveTargetC.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:saveXC,clientY:saveYC}));
-      await _delay(900);
-
-      var dirtySaveC = null;
-      for (var dsC=0; dsC<15; dsC++) {
-        dirtySaveC = document.querySelector('[data-testid="dirtyTrackingSave"]');
-        if (dirtySaveC) break;
-        await _delay(150);
-      }
-      if (dirtySaveC) {
-        dirtySaveC.click();
-        await _delay(800);
-      }
+      // Quantity is normally its own field; isUnitCostFirst means this
+      // particular item's "quantity" value actually belongs in the unit
+      // cost field instead (some items are set up that way on purpose —
+      // see the main loop's own comment on this flag). Everything —
+      // quantity/unit-cost, description, markup, and the second separate
+      // unit cost value — lives in the one panel already open; one call
+      // fills it all in and saves once via the real save button.
+      var qtyResult = qty;
+      var ucResult = (!isUnitCostFirst && unitCost !== undefined && unitCost !== null) ? unitCost : null;
+      await fillPanelFields({
+        quantity: isUnitCostFirst ? null : qty,
+        unitCost: isUnitCostFirst ? qty : (ucResult !== null ? ucResult : null),
+        description: description || null,
+        markupPercent: markupPercent
+      }, 'setQtyMarkupUnitCostCombined: ' + name);
 
       var totalTimeC = performance.now() - startTime;
       _log.push('✓ ' + name +
@@ -1753,54 +1294,18 @@ async function writeEstimateInPage(itemsList, customItemsList, siteOptionsList, 
       }
       if (titleDisplayG) { titleDisplayG.click(); await _delay(400); }
       else { _log.push('⚠ editGroupPlaceHolder: title ValueDisplay not found for Place Holder in "' + groupTitle + '"'); }
-      var titleInpG = null;
-      for (var tiiG = 0; tiiG < 15; tiiG++) { titleInpG = document.querySelector('input[data-testid="itemTitle"]'); if (titleInpG) break; await _delay(100); }
-      if (titleInpG) {
-        writeReactValue(titleInpG, newTitle);
-        await _delay(300);
-      } else { _log.push('⚠ editGroupPlaceHolder: title input did not appear for Place Holder in "' + groupTitle + '"'); }
-      if (description) {
-        _log.push('  └ Writing Place Holder description: "' + description + '"…');
-        var descAreaG = null;
-        for (var daG = 0; daG < 30; daG++) {
-          descAreaG = document.getElementById('description')
-                   || document.querySelector('textarea[data-testid="description"]')
-                   || document.querySelector('textarea[name="description"]');
-          if (descAreaG) break;
-          await _delay(150);
-        }
-        if (descAreaG) {
-          descAreaG.scrollIntoView({ behavior:'instant', block:'center' });
-          writeReactValue(descAreaG, description);
-          await _delay(250);
-          _log.push('  ✓ Place Holder description filled into textarea');
-        } else {
-          _log.push('⚠ editGroupPlaceHolder: description textarea not found for Place Holder in "' + groupTitle + '"');
-        }
-      }
-      var costCellG = targetRow.querySelector('td[data-testid="cell-unitCost"] .ValueDisplay') ||
-                     targetRow.querySelector('td[data-testid="cell-unitCost"]');
-      if (costCellG) {
-        costCellG.click(); await _delay(400);
-        var costInpG = null;
-        for (var ciiG = 0; ciiG < 15; ciiG++) { costInpG = document.querySelector('input[data-testid="unitCost"]'); if (costInpG) break; await _delay(100); }
-        if (costInpG) {
-          costInpG.focus();
-          document.execCommand('selectAll', false, null); document.execCommand('delete', false, null);
-          document.execCommand('insertText', false, String(unitCost));
-          await _delay(300);
-        } else { _log.push('⚠ editGroupPlaceHolder: cost input did not appear for Place Holder in "' + groupTitle + '"'); }
-      } else { _log.push('⚠ editGroupPlaceHolder: cost cell not found for Place Holder in "' + groupTitle + '"'); }
-      await trySetMarkupPercent(markupPercent, 'editGroupPlaceHolder: ' + groupTitle);
-      var sideElG = document.querySelector('.ant-layout-sider, aside');
-      var saveXG = sideElG ? sideElG.getBoundingClientRect().right + 5 : 10;
-      var saveYG = window.innerHeight / 2;
-      var saveTargetG = document.elementFromPoint(saveXG, saveYG) || document.body;
-      saveTargetG.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: saveXG, clientY: saveYG })); await _delay(150);
-      saveTargetG.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: saveXG, clientY: saveYG })); await _delay(900);
-      var dirtySaveG = null;
-      for (var dsG = 0; dsG < 15; dsG++) { dirtySaveG = document.querySelector('[data-testid="dirtyTrackingSave"]'); if (dirtySaveG) break; await _delay(150); }
-      if (dirtySaveG) { dirtySaveG.click(); await _delay(800); }
+
+      if (description) { _log.push('  └ Writing Place Holder description: "' + description + '"…'); }
+      // Title, description, unit cost, and markup all live in the same
+      // panel this click just opened; one call fills every field and
+      // saves once via the real save button.
+      await fillPanelFields({
+        title: newTitle,
+        description: description || null,
+        unitCost: unitCost,
+        markupPercent: markupPercent
+      }, 'editGroupPlaceHolder: ' + groupTitle);
+
       _log.push('✓ editGroupPlaceHolder: Place Holder in "' + groupTitle + '" → "' + newTitle + '" $' + unitCost);
     }
 
