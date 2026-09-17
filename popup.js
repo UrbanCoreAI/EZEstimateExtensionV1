@@ -63,7 +63,11 @@ const ITEM_NAME_TO_COST_ITEM_NAME = {
   // SALES TO EDIT - REALTOR cost_items row/house_rates, same as every
   // other item (see QUANTITY_ITEM_NAME_TO_COST_ITEM_NAME below for its
   // Quantity side).
-  'Realtor Fees': 'SALES TO EDIT - REALTOR'
+  'Realtor Fees': 'SALES TO EDIT - REALTOR',
+  // The database's real row is singular ("Interior Door") -- this was
+  // the one item silently left un-updated on every write (no match, so
+  // tabpicker.js correctly left BuilderTrend's old rate alone) until now.
+  'Interior Doors': 'Interior Door'
 };
 
 // Separate from the map above on purpose: these 6 subtotal labels have no
@@ -106,77 +110,133 @@ const QUANTITY_FROM_FORMULA_ITEMS = [
   'Total Finished 1st Floor SF', 'Total Garage SF', 'Realtor Fees'
 ];
 
+const ITEMSUM_RE_UC = /^=itemsum\((.*)\)$/i;
+const HOUSE_REF_RE_UC = /'([^']+)'!F\d+/g;
+
+// Same resolution algorithm as the admin database's own Custom Plan tab
+// (resolveRate in admin/index.html) and the public webpage (resolveRateWeb
+// in index.html): parse each item's own unit_cost_formula text, never the
+// include_in_average flag. A flag has to be kept manually in sync with
+// what the formula actually says, and drifting out of sync (a new house
+// silently flagged into an average it was never listed in, or a Total
+// row's own flag not matching what its formula actually references) is
+// exactly what caused several rounds of wrong numbers. Parsing the
+// formula itself can't drift -- it IS the formula.
+//
+// "=ITEMSUM(Name One|Name Two|...)" sums each named item's own rate,
+// never weighted by that item's own quantity (the caller applies a Total
+// row's own Quantity once, via QUANTITY_FROM_FORMULA_ITEMS/
+// evaluateQuantityFormula below -- weighting again here would double-
+// count it). A real "=AVERAGE('...'!F##, ...)" formula parses the house
+// tab names directly out of the formula text and averages only those
+// houses' own house_rates rows -- unless selectedHouseKey is given, in
+// which case it returns that one house's own rate directly (a real base
+// plan's actual numbers, not a blend), regardless of whether that house
+// happens to be named in the formula.
+function resolveRateUc(item, byName, tabToKey, selectedHouseKey, seen) {
+  seen = seen || {};
+  if (!item || seen[item.id]) return 0;
+  seen[item.id] = true;
+  const f = (item.unit_cost_formula || '').trim();
+  const m = ITEMSUM_RE_UC.exec(f);
+  if (m) {
+    const names = m[1].split('|').map(function(s) { return s.trim(); }).filter(Boolean);
+    let total = 0;
+    names.forEach(function(nm) {
+      const ref = byName[nm.toLowerCase()];
+      if (!ref) return;
+      total += resolveRateUc(ref, byName, tabToKey, selectedHouseKey, seen);
+    });
+    return total;
+  }
+  const rates = item.house_rates || [];
+  function unitCostOf(hr) { return (hr.quantity > 0) ? (hr.amount / hr.quantity) : (hr.amount || 0); }
+  if (selectedHouseKey) {
+    const hr = rates.find(function(h) { return h.house === selectedHouseKey; });
+    return hr ? unitCostOf(hr) : 0;
+  }
+  const keys = [];
+  let hm;
+  HOUSE_REF_RE_UC.lastIndex = 0;
+  while ((hm = HOUSE_REF_RE_UC.exec(f)) !== null) {
+    const key = tabToKey[hm[1]];
+    if (key) keys.push(key);
+  }
+  const included = keys.map(function(k) { return rates.find(function(h) { return h.house === k; }); }).filter(Boolean);
+  if (!included.length) return 0;
+  return included.reduce(function(s, h) { return s + unitCostOf(h); }, 0) / included.length;
+}
+
+async function fetchHousesFromSupabase() {
+  const res = await fetch(SUPABASE_URL_UC + '/rest/v1/houses?select=key,label,tab_name', {
+    headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
+  });
+  if (!res.ok) throw new Error('Supabase houses read failed (' + res.status + '): ' + await res.text());
+  return res.json();
+}
+
 // Returns { itemName: unitCost | undefined }. unitCost is undefined for any
 // name with no matching cost_items row — callers must treat that as "leave
 // BuilderTrend's existing rate alone", never as "write zero".
 //
-// selectedHouseKey: null → average every house_rates row flagged
-// include_in_average=true for that item (the Custom-Plan-style number).
+// selectedHouseKey: null → average across whatever houses that item's own
+// unit_cost_formula actually lists (the Custom-Plan-style number).
 // A house key (e.g. 'kiawah') → that house's own rate only, no averaging —
 // used when a base plan was selected, since you're reconstructing a real
 // house's actual numbers, not a blend.
 async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
   console.log('[Keel][unitcost] fetchUnitCostsFromSupabase called with selectedHouseKey=' + JSON.stringify(selectedHouseKey) + ', ' + itemNames.length + ' item(s):', itemNames);
 
-  const lookupNames = itemNames.map(function(n) { return ITEM_NAME_TO_COST_ITEM_NAME[n] || n; });
-  const uniqueNames = Array.from(new Set(lookupNames));
-  const inList = uniqueNames.map(function(n) { return '"' + n.replace(/"/g, '\\"') + '"'; }).join(',');
-
-  const params = new URLSearchParams();
-  params.set('select', 'id,item_name,house_rates(house,amount,quantity,include_in_average)');
-  params.set('item_name', 'in.(' + inList + ')');
-
-  const url = SUPABASE_URL_UC + '/rest/v1/cost_items?' + params.toString();
-  let res;
+  const url = SUPABASE_URL_UC + '/rest/v1/cost_items?select=id,item_name,unit_cost_formula,house_rates(house,amount,quantity)';
+  let rows, houses;
   try {
-    res = await fetch(url, {
-      headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC }
-    });
+    const [costRes, housesResult] = await Promise.all([
+      fetch(url, { headers: { apikey: SUPABASE_ANON_UC, Authorization: 'Bearer ' + SUPABASE_ANON_UC } }),
+      fetchHousesFromSupabase()
+    ]);
+    if (!costRes.ok) {
+      const bodyText = await costRes.text();
+      console.error('[Keel][unitcost] Supabase returned HTTP ' + costRes.status + ' for URL:', url, 'body:', bodyText);
+      throw new Error('Supabase cost_items read failed (' + costRes.status + '): ' + bodyText);
+    }
+    rows = await costRes.json();
+    houses = housesResult;
   } catch (networkErr) {
-    console.error('[Keel][unitcost] fetch() itself threw (network/CSP/offline?) for URL:', url, networkErr);
+    console.error('[Keel][unitcost] fetch() itself threw (network/CSP/offline?):', networkErr);
     throw networkErr;
   }
-  if (!res.ok) {
-    const bodyText = await res.text();
-    console.error('[Keel][unitcost] Supabase returned HTTP ' + res.status + ' for URL:', url, 'body:', bodyText);
-    throw new Error('Supabase cost_items read failed (' + res.status + '): ' + bodyText);
-  }
-  const rows = await res.json();
-  console.log('[Keel][unitcost] Supabase returned ' + rows.length + ' cost_items row(s) for ' + uniqueNames.length + ' requested name(s)');
+  console.log('[Keel][unitcost] Supabase returned ' + rows.length + ' cost_items row(s)');
 
-  const byLookupName = {};
-  rows.forEach(function(r) { byLookupName[r.item_name] = r; });
+  const byName = {};
+  rows.forEach(function(r) { byName[r.item_name.toLowerCase()] = r; });
+  const tabToKey = {};
+  houses.forEach(function(h) { tabToKey[h.tab_name || ('2026 MASTER PLAN ' + h.label.toUpperCase())] = h.key; });
 
   const result = {};
-  let resolvedCount = 0, noRowCount = 0, noRateCount = 0;
+  let resolvedCount = 0, noRowCount = 0;
   itemNames.forEach(function(originalName) {
-    const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
-    const row = byLookupName[lookupName];
-    if (!row) { result[originalName] = undefined; noRowCount++; return; }
-    const rates = row.house_rates || [];
-    function unitCostOf(hr) { return (hr.quantity > 0) ? (hr.amount / hr.quantity) : (hr.amount || 0); }
-
-    if (selectedHouseKey) {
-      const hr = rates.find(function(h) { return h.house === selectedHouseKey; });
-      if (!hr) {
-        console.warn('[Keel][unitcost] "' + originalName + '" (cost_items name "' + lookupName + '") has no house_rates row for house="' + selectedHouseKey + '" — houses present: ' + rates.map(function(h){return h.house;}).join(','));
-        noRateCount++;
-      }
-      result[originalName] = hr ? roundUpToCent(unitCostOf(hr)) : undefined;
-    } else {
-      const included = rates.filter(function(h) { return h.include_in_average; });
-      if (!included.length) {
-        console.warn('[Keel][unitcost] "' + originalName + '" (cost_items name "' + lookupName + '") has ZERO house_rates rows with include_in_average=true out of ' + rates.length + ' total — averaging is impossible for this item.', rates);
-        noRateCount++;
-        result[originalName] = undefined;
-        return;
-      }
-      const sum = included.reduce(function(s, h) { return s + unitCostOf(h); }, 0);
-      result[originalName] = roundUpToCent(sum / included.length);
+    if (originalName === 'Number of Baths') {
+      // Backend-only: no cost_items row of its own, never displayed as
+      // its own line in the admin database. Its Unit Cost is simply
+      // Plumbing Labor Rough In (60%)'s own rate plus Plumbing Trim Out
+      // (40%)'s own rate -- Quantity stays the real bath count, resolved
+      // elsewhere via QUANTITY_FROM_FORMULA_ITEMS, unchanged.
+      const roughIn = byName['plumbing labor rough in (60%)'];
+      const trimOut = byName['plumbing trim out (40%)'];
+      if (!roughIn || !trimOut) { result[originalName] = undefined; noRowCount++; return; }
+      const rate = resolveRateUc(roughIn, byName, tabToKey, selectedHouseKey)
+                 + resolveRateUc(trimOut, byName, tabToKey, selectedHouseKey);
+      result[originalName] = roundUpToCent(rate);
+      resolvedCount++;
+      return;
     }
-    if (result[originalName] !== undefined) resolvedCount++;
+    const lookupName = ITEM_NAME_TO_COST_ITEM_NAME[originalName] || originalName;
+    const row = byName[lookupName.toLowerCase()];
+    if (!row) { result[originalName] = undefined; noRowCount++; return; }
+    result[originalName] = roundUpToCent(resolveRateUc(row, byName, tabToKey, selectedHouseKey));
+    resolvedCount++;
   });
-  console.log('[Keel][unitcost] result: ' + resolvedCount + ' resolved, ' + noRowCount + ' had no matching cost_items row, ' + noRateCount + ' had no usable house_rates row');
+  console.log('[Keel][unitcost] result: ' + resolvedCount + ' resolved, ' + noRowCount + ' had no matching cost_items row');
   return result;
 }
 

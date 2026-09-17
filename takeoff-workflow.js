@@ -1969,8 +1969,9 @@
         // Unit costs from the Supabase admin price list — every item gets
         // one now, not just the allowances. If a base plan was used
         // (wf.selectedBasePlanHouse set), use THAT house's own rate;
-        // otherwise the Custom-Plan-style average of every house_rates
-        // row flagged include_in_average. fetchUnitCostsFromSupabase() is
+        // otherwise the Custom-Plan-style average across whatever houses
+        // that item's own unit_cost_formula actually lists (parsed
+        // directly from the formula text, not a flag). fetchUnitCostsFromSupabase() is
         // defined in popup.js, not duplicated here — this file is only
         // ever loaded in panel.html, always right after popup.js (see its
         // script tags), so the function is already a global by this point.
