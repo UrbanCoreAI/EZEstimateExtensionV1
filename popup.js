@@ -4,6 +4,20 @@
 
 function $(id) { return document.getElementById(id); }
 
+// Always rounds UP to the nearest cent -- never nearest, never down.
+// BuilderTrend's own Unit Cost field only ever stores 2 decimals, so a
+// raw fractional-cent average (e.g. $12.693784.../SF) silently gets
+// truncated there before BuilderTrend multiplies it by a large quantity
+// -- turning a few cents of rounding into tens of dollars of drift once
+// a big proxy quantity (thousands of SF) is involved. Rounding UP here,
+// at the exact number that gets sent, means BuilderTrend's own math and
+// the admin database's displayed total both start from the identical
+// 2-decimal value -- see the matching roundUpToCent in KeelEZEstimate's
+// admin/index.html and index.html.
+function roundUpToCent(n) {
+  return Math.ceil((Number(n) || 0) * 100 - 1e-6) / 100;
+}
+
 function showStatus(msg, type, duration) {
   type = type || 'info'; duration = duration === undefined ? 3500 : duration;
   const bar = $('status-bar');
@@ -148,7 +162,7 @@ async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
         console.warn('[Keel][unitcost] "' + originalName + '" (cost_items name "' + lookupName + '") has no house_rates row for house="' + selectedHouseKey + '" — houses present: ' + rates.map(function(h){return h.house;}).join(','));
         noRateCount++;
       }
-      result[originalName] = hr ? unitCostOf(hr) : undefined;
+      result[originalName] = hr ? roundUpToCent(unitCostOf(hr)) : undefined;
     } else {
       const included = rates.filter(function(h) { return h.include_in_average; });
       if (!included.length) {
@@ -158,7 +172,7 @@ async function fetchUnitCostsFromSupabase(itemNames, selectedHouseKey) {
         return;
       }
       const sum = included.reduce(function(s, h) { return s + unitCostOf(h); }, 0);
-      result[originalName] = sum / included.length;
+      result[originalName] = roundUpToCent(sum / included.length);
     }
     if (result[originalName] !== undefined) resolvedCount++;
   });
